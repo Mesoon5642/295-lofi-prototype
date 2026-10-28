@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { checkCredentials } from '../api/auth.js'
 import AdultDialog from './AdultDialog.jsx'
 import CredentialsForm from './CredentialsForm.jsx'
 
@@ -7,7 +8,13 @@ export default function SignInDialog({ onSignIn, onClose }) {
   const firstFieldRef = useRef(null)
   return (
     <AdultDialog title="Parent or Teacher sign in" onClose={onClose} initialFocusRef={firstFieldRef}>
-      <CredentialsForm withUsername submitLabel="Sign in" onSuccess={onSignIn} firstFieldRef={firstFieldRef} />
+      <CredentialsForm
+        withUsername
+        submitLabel="Sign in"
+        check={checkCredentials}
+        onSuccess={onSignIn}
+        firstFieldRef={firstFieldRef}
+      />
     </AdultDialog>
   )
 }

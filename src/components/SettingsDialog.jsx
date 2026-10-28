@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
+import { checkParentPassword } from '../api/auth.js'
 import AdultDialog from './AdultDialog.jsx'
 import CredentialsForm from './CredentialsForm.jsx'
 import ReadingSettings from './ReadingSettings.jsx'
+import { SettingsContext } from './settingsContext.js'
 
 // Live reading settings during play, behind the parent/teacher password.
 // The password is asked for every time the dialog opens.
 export default function SettingsDialog({ onClose }) {
+  const { childId } = useContext(SettingsContext)
   const [unlocked, setUnlocked] = useState(false)
   const firstFieldRef = useRef(null)
   const settingsTitleRef = useRef(null)
@@ -25,7 +28,12 @@ export default function SettingsDialog({ onClose }) {
           <ReadingSettings />
         </div>
       ) : (
-        <CredentialsForm submitLabel="Unlock" onSuccess={() => setUnlocked(true)} firstFieldRef={firstFieldRef} />
+        <CredentialsForm
+          submitLabel="Unlock"
+          check={(_username, password) => checkParentPassword(childId, password)}
+          onSuccess={() => setUnlocked(true)}
+          firstFieldRef={firstFieldRef}
+        />
       )}
     </AdultDialog>
   )

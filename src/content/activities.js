@@ -1,6 +1,6 @@
-// Activity content: pure data, no logic.
-
-export const SAMPLE_CHILD = { id: 'child-alex', name: 'Alex' }
+// Activity content: pure data, no logic. Shared by the React app and the server
+// (seed data and audio clip generation). Pictures are inline SVGs in the app, so the
+// word list lives here in code rather than in the database.
 
 export const MATCH_THE_WORD = {
   id: 'match-the-word',

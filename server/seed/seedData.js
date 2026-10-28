@@ -1,17 +1,17 @@
-// Seed data: profile Alex plus a few completed sample rounds.
+// Seed data written to MongoDB on first run (and by Reset Demo Data / npm run db:seed):
+// child profile Alex, one grown-up account, and a few completed sample rounds.
 // Sample rounds are clearly marked (isSample: true, ids prefixed 'sample-')
 // and use past dates so real rounds always sort ahead of them.
 
-import { MATCH_THE_WORD, SAMPLE_CHILD } from '../content/activities.js'
+import { MATCH_THE_WORD } from '../../src/content/activities.js'
+import { DEFAULT_SETTINGS } from '../../src/content/settings.js'
 
-export const STORAGE_VERSION = 1
+export const SEED_CHILD = { id: 'child-alex', name: 'Alex', settings: DEFAULT_SETTINGS }
 
-export const DEFAULT_SETTINGS = {
-  textSize: 'standard',
-  font: 'standard',
-  wordAudio: 'on',
-  explanations: 'off',
-}
+// Demo grown-up account. The password is hashed before it is stored.
+export const SEED_ADULTS = [
+  { username: 'admin', password: 'admin', role: 'parent', childIds: [SEED_CHILD.id] },
+]
 
 // Hints come straight from the activity content so they never drift.
 const HINTS = Object.fromEntries(MATCH_THE_WORD.items.map((item) => [item.word, item.hint]))
@@ -19,7 +19,7 @@ const HINTS = Object.fromEntries(MATCH_THE_WORD.items.map((item) => [item.word, 
 export const SEED_ROUNDS = [
   {
     id: 'sample-round-1',
-    childId: SAMPLE_CHILD.id,
+    childId: SEED_CHILD.id,
     activityId: MATCH_THE_WORD.id,
     startedAt: '2026-10-14T15:00:00.000Z',
     completedAt: '2026-10-14T15:06:30.000Z',
@@ -97,7 +97,7 @@ export const SEED_ROUNDS = [
   },
   {
     id: 'sample-round-2',
-    childId: SAMPLE_CHILD.id,
+    childId: SEED_CHILD.id,
     activityId: MATCH_THE_WORD.id,
     startedAt: '2026-10-17T16:30:00.000Z',
     completedAt: '2026-10-17T16:35:10.000Z',
@@ -175,7 +175,7 @@ export const SEED_ROUNDS = [
   },
   {
     id: 'sample-round-3',
-    childId: SAMPLE_CHILD.id,
+    childId: SEED_CHILD.id,
     activityId: MATCH_THE_WORD.id,
     startedAt: '2026-10-20T14:10:00.000Z',
     completedAt: '2026-10-20T14:14:45.000Z',
@@ -252,13 +252,3 @@ export const SEED_ROUNDS = [
     ],
   },
 ]
-
-// A fresh, independent copy of the full seed state.
-export function createSeedState(settings = DEFAULT_SETTINGS) {
-  return {
-    version: STORAGE_VERSION,
-    profiles: [{ id: SAMPLE_CHILD.id, name: SAMPLE_CHILD.name }],
-    rounds: JSON.parse(JSON.stringify(SEED_ROUNDS)),
-    settings: { ...DEFAULT_SETTINGS, ...settings },
-  }
-}

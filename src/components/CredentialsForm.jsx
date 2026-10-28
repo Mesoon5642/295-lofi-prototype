@@ -1,25 +1,50 @@
 import { useId, useRef, useState } from 'react'
-import { checkCredentials, checkParentPassword } from '../auth/credentials.js'
 
 // Password form for grown-ups. With `withUsername` it asks for a username and
 // password (sign in); without, just the parent/teacher password (unlock).
-// `firstFieldRef` is attached to the first input so the dialog can focus it.
-export default function CredentialsForm({ withUsername = false, submitLabel, onSuccess, firstFieldRef }) {
+// `check(username, password)` asks the server and resolves true or false; it rejects
+// when the server can't be reached. `firstFieldRef` is attached to the first input
+// so the dialog can focus it.
+export default function CredentialsForm({
+  withUsername = false,
+  submitLabel,
+  check,
+  onSuccess,
+  firstFieldRef,
+}) {
   const passwordRef = useRef(null)
   const usernameId = useId()
   const passwordId = useId()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [failedAttempts, setFailedAttempts] = useState(0)
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    const ok = withUsername ? checkCredentials(username, password) : checkParentPassword(password)
+    if (checking) return
+    setChecking(true)
+    let ok = false
+    try {
+      ok = await check(username, password)
+    } catch {
+      setChecking(false)
+      setFailedAttempts((count) => count + 1)
+      setError('We couldn’t reach the game server. Please try again.')
+      return
+    }
+    setChecking(false)
     if (ok) {
       onSuccess()
       return
     }
     setFailedAttempts((count) => count + 1)
+    setError(
+      withUsername
+        ? 'That username or password is not right. Please try again.'
+        : 'That password is not right. Please try again.',
+    )
     setPassword('')
     passwordRef.current?.focus()
   }
@@ -61,13 +86,10 @@ export default function CredentialsForm({ withUsername = false, submitLabel, onS
       </label>
       {/* Keyed by attempts so a repeated error is announced again. */}
       <p key={failedAttempts} className="dialog-form__error" role="alert">
-        {failedAttempts > 0 &&
-          (withUsername
-            ? 'That username or password is not right. Please try again.'
-            : 'That password is not right. Please try again.')}
+        {failedAttempts > 0 && error}
       </p>
-      <button type="submit" className="btn btn--primary btn--big">
-        {submitLabel}
+      <button type="submit" className="btn btn--primary btn--big" aria-disabled={checking || undefined}>
+        {checking ? 'Checking…' : submitLabel}
       </button>
     </form>
   )

@@ -552,7 +552,8 @@ input {
 
 /* Live regions stay in the DOM (so they announce), but take no space when empty. */
 .feedback-region:empty,
-.hint-region:empty {
+.hint-region:empty,
+.screen-error:empty {
   margin-top: -20px;
 }
 
@@ -710,6 +711,17 @@ input {
   border-radius: 12px;
   background: #ffffff;
   font-weight: 400;
+}
+
+.screen-error {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.save-note {
+  color: var(--color-muted);
+  font-size: var(--fs-small);
+  text-align: center;
 }
 
 .dialog-form__error {

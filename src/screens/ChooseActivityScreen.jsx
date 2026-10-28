@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { getSpeechSupport, speak } from '../audio/speech.js'
+import { getAudioSupport, playClip } from '../audio/player.js'
+import { describeActivity } from '../audio/clips.js'
 import Icon from '../components/Icon.jsx'
 import Picture from '../components/Picture.jsx'
 import ScreenHeading from '../components/ScreenHeading.jsx'
@@ -7,7 +8,15 @@ import TopBar from '../components/TopBar.jsx'
 import { MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../content/activities.js'
 
 // One game: picture, title, description with a Hear button, and Start / Keep going.
-function GameCard({ activity, pictureId, note, hasRoundInProgress, onStart, audioAvailable }) {
+function GameCard({
+  activity,
+  pictureId,
+  note,
+  hasRoundInProgress,
+  onStart,
+  starting,
+  audioAvailable,
+}) {
   const titleId = `${activity.id}-title`
   return (
     <section className="activity-card" aria-labelledby={titleId}>
@@ -20,7 +29,7 @@ function GameCard({ activity, pictureId, note, hasRoundInProgress, onStart, audi
         <button
           type="button"
           className="btn btn--secondary speaker-button"
-          onClick={() => speak(`${activity.title}. ${activity.description}`)}
+          onClick={() => playClip(describeActivity(activity))}
           disabled={!audioAvailable}
         >
           <Icon name="speaker" />
@@ -32,7 +41,12 @@ function GameCard({ activity, pictureId, note, hasRoundInProgress, onStart, audi
       {hasRoundInProgress && (
         <p className="activity-card__note">You can pick up where you left off.</p>
       )}
-      <button type="button" className="btn btn--primary btn--huge" onClick={onStart}>
+      <button
+        type="button"
+        className="btn btn--primary btn--huge"
+        onClick={onStart}
+        aria-disabled={starting || undefined}
+      >
         <Icon name="play" size={36} />
         <span>{hasRoundInProgress ? 'Keep going' : 'Start'}</span>
       </button>
@@ -46,10 +60,12 @@ export default function ChooseActivityScreen({
   inProgress,
   practiceWords,
   onStart,
+  starting,
+  error,
   onBack,
   focusHeading,
 }) {
-  const [audioAvailable] = useState(() => getSpeechSupport() === 'available')
+  const [audioAvailable] = useState(() => getAudioSupport() === 'available')
   const showPractice = practiceWords.length > 0 || inProgress[PRACTICE_TRICKY_WORDS.id]
   const practiceCount = Math.min(practiceWords.length, PRACTICE_TRICKY_WORDS.questionCount)
 
@@ -67,12 +83,16 @@ export default function ChooseActivityScreen({
             <span>Audio unavailable</span>
           </p>
         )}
+        <p className="screen-error" role="alert">
+          {error}
+        </p>
         <div className="activity-cards">
           <GameCard
             activity={MATCH_THE_WORD}
             pictureId="cat"
             hasRoundInProgress={inProgress[MATCH_THE_WORD.id]}
             onStart={() => onStart(MATCH_THE_WORD.id)}
+            starting={starting}
             audioAvailable={audioAvailable}
           />
           {showPractice && (
@@ -85,6 +105,7 @@ export default function ChooseActivityScreen({
               }
               hasRoundInProgress={inProgress[PRACTICE_TRICKY_WORDS.id]}
               onStart={() => onStart(PRACTICE_TRICKY_WORDS.id)}
+              starting={starting}
               audioAvailable={audioAvailable}
             />
           )}

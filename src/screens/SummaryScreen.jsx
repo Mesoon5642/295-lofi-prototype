@@ -6,7 +6,14 @@ import { FEEDBACK } from '../content/activities.js'
 import { summarizeRound } from '../game/index.js'
 
 // Celebrates finishing and effort. No scores, stars, or speed.
-export default function SummaryScreen({ round, onPlayAgain, onHome, focusHeading }) {
+export default function SummaryScreen({
+  round,
+  onPlayAgain,
+  starting,
+  error,
+  onHome,
+  focusHeading,
+}) {
   const summary = summarizeRound(round)
   return (
     <>
@@ -34,8 +41,16 @@ export default function SummaryScreen({ round, onPlayAgain, onHome, focusHeading
           ))}
         </ul>
 
+        <p className="screen-error" role="alert">
+          {error}
+        </p>
         <div className="button-row button-row--center">
-          <button type="button" className="btn btn--primary btn--big" onClick={onPlayAgain}>
+          <button
+            type="button"
+            className="btn btn--primary btn--big"
+            onClick={onPlayAgain}
+            aria-disabled={starting || undefined}
+          >
             <Icon name="play" size={32} />
             <span>Play Again</span>
           </button>

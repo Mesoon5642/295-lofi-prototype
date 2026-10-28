@@ -8,11 +8,6 @@ import ReadingSettings from '../components/ReadingSettings.jsx'
 import { formatDate } from '../components/formatDate.js'
 import { PRACTICE_TRICKY_WORDS } from '../content/activities.js'
 import { recentPracticeWords, summarizeRound } from '../game/index.js'
-import { getRounds, resetDemoData } from '../storage/index.js'
-
-function loadRounds(childId) {
-  return getRounds({ childId, status: 'completed' })
-}
 
 function ReadingSettingsPanel({ childName }) {
   return (
@@ -93,6 +88,7 @@ function RoundList({ rounds, onOpen }) {
 
 function ResetDemo({ onReset }) {
   const [confirming, setConfirming] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const confirmRef = useRef(null)
   const startRef = useRef(null)
   const wasConfirming = useRef(false)
@@ -103,8 +99,11 @@ function ResetDemo({ onReset }) {
     wasConfirming.current = confirming
   }, [confirming])
 
-  function handleConfirm() {
-    onReset()
+  async function handleConfirm() {
+    if (resetting) return
+    setResetting(true)
+    await onReset()
+    setResetting(false)
     setConfirming(false)
   }
 
@@ -117,8 +116,14 @@ function ResetDemo({ onReset }) {
         <div className="confirm" role="group" aria-label="Confirm reset">
           <p>Reset demo data? This removes rounds played here and restores the sample rounds.</p>
           <div className="button-row">
-            <button ref={confirmRef} type="button" className="btn btn--danger" onClick={handleConfirm}>
-              Yes, reset
+            <button
+              ref={confirmRef}
+              type="button"
+              className="btn btn--danger"
+              onClick={handleConfirm}
+              aria-disabled={resetting || undefined}
+            >
+              {resetting ? 'Resetting…' : 'Yes, reset'}
             </button>
             <button type="button" className="btn btn--secondary" onClick={() => setConfirming(false)}>
               Cancel
@@ -135,17 +140,21 @@ function ResetDemo({ onReset }) {
   )
 }
 
-export default function ParentScreen({ child, onBack, focusHeading }) {
-  const [rounds, setRounds] = useState(() => loadRounds(child.id))
+// `rounds`: the child's completed rounds, newest first. `onReset` resets the demo data
+// on the server and reloads the rounds.
+export default function ParentScreen({ child, rounds, onReset, onBack, focusHeading }) {
   const [openId, setOpenId] = useState(null)
   const [status, setStatus] = useState('')
   const openRound = openId ? rounds.find((r) => r.id === openId) : null
 
-  function handleReset() {
-    resetDemoData()
-    setRounds(loadRounds(child.id))
-    setOpenId(null)
-    setStatus('Demo data was reset.')
+  async function handleReset() {
+    try {
+      await onReset()
+      setOpenId(null)
+      setStatus('Demo data was reset.')
+    } catch {
+      setStatus('Could not reset the demo data. Check that the game server is running.')
+    }
   }
 
   return (

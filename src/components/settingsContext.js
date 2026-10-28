@@ -1,8 +1,10 @@
 import { createContext } from 'react'
+import { DEFAULT_SETTINGS } from '../content/settings.js'
 
-// Reading settings (text size, font, word audio, "how did you choose" prompt) plus a
-// function that saves changes.
+// The playing child's id, their reading settings (text size, font, word audio, "how did
+// you choose" prompt), and a function that saves changes through the API.
 export const SettingsContext = createContext({
-  settings: { textSize: 'standard', font: 'standard', wordAudio: 'on', explanations: 'off' },
+  childId: null,
+  settings: DEFAULT_SETTINGS,
   updateSettings: () => {},
 })

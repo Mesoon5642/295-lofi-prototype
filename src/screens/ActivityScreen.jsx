@@ -1,5 +1,6 @@
 import { useContext, useEffect, useId, useReducer, useRef, useState } from 'react'
-import { getSpeechSupport, speak } from '../audio/speech.js'
+import { saveRound } from '../api/progress.js'
+import { getAudioSupport, playClip } from '../audio/player.js'
 import ExplanationForm from '../components/ExplanationForm.jsx'
 import Icon from '../components/Icon.jsx'
 import PauseDialog from '../components/PauseDialog.jsx'
@@ -11,7 +12,6 @@ import TopBar from '../components/TopBar.jsx'
 import WordChoice from '../components/WordChoice.jsx'
 import { ACTIVITIES, FEEDBACK, MATCH_THE_WORD } from '../content/activities.js'
 import { getCurrentQuestion, getFeedback, roundReducer } from '../game/index.js'
-import { saveRound } from '../storage/index.js'
 
 function Feedback({ kind, attempts }) {
   if (kind === 'correct') {
@@ -36,7 +36,8 @@ function Feedback({ kind, attempts }) {
 
 export default function ActivityScreen({ initialRound, onBack, onComplete, focusHeading }) {
   const [round, dispatch] = useReducer(roundReducer, initialRound)
-  const [audioAvailable] = useState(() => getSpeechSupport() === 'available')
+  const [audioAvailable] = useState(() => getAudioSupport() === 'available')
+  const [saveFailed, setSaveFailed] = useState(false)
   const { settings } = useContext(SettingsContext)
   const activity = ACTIVITIES.find((a) => a.id === round.activityId) ?? MATCH_THE_WORD
   const askExplanation = settings.explanations === 'on'
@@ -51,9 +52,13 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
   const shownIndex = useRef(round.currentIndex)
   const wasPaused = useRef(round.paused)
 
-  // Save after every change so a refresh keeps the child's progress.
+  // Save after every change so a refresh keeps the child's progress. Saves are sent
+  // in order by the API module.
   useEffect(() => {
-    saveRound(round)
+    saveRound(round).then(
+      () => setSaveFailed(false),
+      () => setSaveFailed(true),
+    )
   }, [round])
 
   useEffect(() => {
@@ -75,7 +80,7 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
   }, [round.paused])
 
   function say(text) {
-    if (speak(text)) dispatch({ type: 'USE_AUDIO' })
+    if (playClip(text)) dispatch({ type: 'USE_AUDIO' })
   }
 
   function finishExplanation(action) {
@@ -191,6 +196,12 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
               <Icon name="next" size={32} />
             </button>
           </div>
+        )}
+
+        {saveFailed && (
+          <p className="save-note" role="status">
+            Progress isn&rsquo;t being saved right now. A grown-up can check the game server.
+          </p>
         )}
 
         {round.paused && <PauseDialog onContinue={handleContinue} />}
