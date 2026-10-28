@@ -33,8 +33,13 @@ export function startRound({
   activity,
   now = new Date().toISOString(),
   rng = Math.random,
+  targets,
 }) {
-  const questions = generateQuestions(activity.items, { rng, count: activity.questionCount })
+  const questions = generateQuestions(activity.items, {
+    rng,
+    count: activity.questionCount,
+    targets,
+  })
   return createRound({ id, childId, activityId: activity.id, questions, now })
 }
 

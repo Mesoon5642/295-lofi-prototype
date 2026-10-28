@@ -146,7 +146,7 @@ describe('ensureSeeded', () => {
     expect(stored.version).toBe(1)
     expect(stored.profiles).toEqual([{ id: 'child-alex', name: 'Alex' }])
     expect(stored.rounds).toEqual(SEED_ROUNDS)
-    expect(stored.settings).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on' })
+    expect(stored.settings).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on', explanations: 'off' })
     expect(getChildProfile()).toEqual({ id: 'child-alex', name: 'Alex' })
     expect(getChildProfile('child-nobody')).toBeNull()
   })
@@ -329,27 +329,28 @@ describe('copies', () => {
     settings.textSize = 'large'
     settings.font = 'dyslexic'
     settings.wordAudio = 'off'
+    settings.explanations = 'on'
 
     expect(getRound(round.id)).toEqual(makeRound())
     expect(getRounds()).toHaveLength(SEED_ROUNDS.length + 1)
     expect(getChildProfile().name).toBe('Alex')
-    expect(getSettings()).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on' })
+    expect(getSettings()).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on', explanations: 'off' })
     expect(getRound('sample-round-1')).toEqual(SEED_ROUNDS[0])
   })
 })
 
 describe('settings', () => {
   it('defaults to standard text size, the standard font, and word audio on', () => {
-    expect(getSettings()).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on' })
+    expect(getSettings()).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on', explanations: 'off' })
   })
 
   it('merges and persists saved settings', () => {
-    expect(saveSettings({ textSize: 'large' })).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on' })
-    expect(getSettings()).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on' })
-    expect(readStored().settings).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on' })
-    expect(saveSettings({ font: 'dyslexic' })).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on' })
-    expect(readStored().settings).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on' })
-    expect(saveSettings({})).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on' })
+    expect(saveSettings({ textSize: 'large' })).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on', explanations: 'off' })
+    expect(getSettings()).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on', explanations: 'off' })
+    expect(readStored().settings).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on', explanations: 'off' })
+    expect(saveSettings({ font: 'dyslexic' })).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on', explanations: 'off' })
+    expect(readStored().settings).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on', explanations: 'off' })
+    expect(saveSettings({})).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on', explanations: 'off' })
   })
 
   it('saves word audio on and off', () => {
@@ -357,6 +358,7 @@ describe('settings', () => {
       textSize: 'standard',
       font: 'standard',
       wordAudio: 'off',
+      explanations: 'off',
     })
     expect(readStored().settings.wordAudio).toBe('off')
     expect(saveSettings({ wordAudio: 'on' }).wordAudio).toBe('on')
@@ -368,15 +370,24 @@ describe('settings', () => {
       textSize: 'large',
       font: 'dyslexic',
       wordAudio: 'on',
+      explanations: 'off',
     })
-    expect(getSettings()).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on' })
+    expect(getSettings()).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on', explanations: 'off' })
+  })
+
+  it('keeps the "how did you choose" prompt off by default and saves it on and off', () => {
+    expect(getSettings().explanations).toBe('off')
+    expect(saveSettings({ explanations: 'on' }).explanations).toBe('on')
+    expect(readStored().settings.explanations).toBe('on')
+    expect(saveSettings({ explanations: 'maybe' }).explanations).toBe('on')
+    expect(saveSettings({ explanations: 'off' }).explanations).toBe('off')
   })
 
   it('fills in defaults for settings saved before font and word audio existed', () => {
     const state = createSeedState()
     state.settings = { textSize: 'large' }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    expect(getSettings()).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on' })
+    expect(getSettings()).toEqual({ textSize: 'large', font: 'standard', wordAudio: 'on', explanations: 'off' })
   })
 })
 
@@ -394,7 +405,7 @@ describe('resetDemoData', () => {
     expect(getRound('round-y')).toBeNull()
     expect(getInProgressRound(SAMPLE_CHILD.id, MATCH_THE_WORD.id)).toBeNull()
     expect(getChildProfile()).toEqual({ id: 'child-alex', name: 'Alex' })
-    expect(getSettings()).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on' })
+    expect(getSettings()).toEqual({ textSize: 'large', font: 'dyslexic', wordAudio: 'on', explanations: 'off' })
   })
 
   it('works on empty or corrupt storage', () => {
@@ -403,6 +414,6 @@ describe('resetDemoData', () => {
     localStorage.setItem(STORAGE_KEY, 'garbage')
     resetDemoData()
     expect(readStored().rounds).toEqual(SEED_ROUNDS)
-    expect(getSettings()).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on' })
+    expect(getSettings()).toEqual({ textSize: 'standard', font: 'standard', wordAudio: 'on', explanations: 'off' })
   })
 })

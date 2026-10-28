@@ -12,6 +12,7 @@ const SETTING_VALUES = {
   textSize: ['standard', 'large'],
   font: ['standard', 'dyslexic'],
   wordAudio: ['on', 'off'],
+  explanations: ['off', 'on'],
 }
 
 // Used only if localStorage is missing or throws (e.g. blocked site data),

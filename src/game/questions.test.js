@@ -90,6 +90,34 @@ describe('generateQuestions', () => {
     expect(new Set(questions.map((q) => q.options.indexOf(q.target)))).toEqual(new Set([0, 1, 2]))
   })
 
+  it('limits targets to the given words but draws distractors from every item', () => {
+    for (const seed of SEEDS) {
+      const questions = generateQuestions(ITEMS, {
+        rng: createRng(seed),
+        count: 5,
+        targets: ['dog', 'bus'],
+      })
+      expect(questions.map((q) => q.target).sort()).toEqual(['bus', 'dog'])
+      for (const q of questions) {
+        expect(q.options).toHaveLength(3)
+        expect(new Set(q.options).size).toBe(3)
+        expect(q.options).toContain(q.target)
+        for (const option of q.options) expect(WORDS).toContain(option)
+      }
+    }
+  })
+
+  it('builds a single question when only one target word is given', () => {
+    const questions = generateQuestions(ITEMS, { rng: createRng(2), targets: ['hat'] })
+    expect(questions).toHaveLength(1)
+    expect(questions[0].target).toBe('hat')
+    expect(questions[0].options).toHaveLength(3)
+  })
+
+  it('ignores target words that are not in the items', () => {
+    expect(generateQuestions(ITEMS, { rng: createRng(2), targets: ['zebra'] })).toEqual([])
+  })
+
   it('throws when there are fewer than 3 distinct words', () => {
     expect(() => generateQuestions(ITEMS.slice(0, 2), { rng: createRng(1) })).toThrow()
   })

@@ -28,7 +28,9 @@ Screens talk only to `storage/`, never to localStorage. To move to the planned E
 ## Demo scenarios
 
 1. **Independent practice:** Play → Start → answer all five → "You finished 5 words!"
-2. **Using support:** choose a wrong word ("Let's try again") → Help (shows the first-letter hint) → a word's Hear button → choose the right word → type a note or Skip → Pause / Continue → Next.
+2. **Using support:** choose a wrong word ("Let's try again") → Help (shows the first-letter hint) → a word's Hear button → choose the right word → Pause / Continue → Next. (The "Tell us how you chose" note is off by default; turn on **Ask how they chose** in Settings to try it.)
 3. **Adult review:** Home → Parent or Teacher (top-left of the top bar) → sign in with `admin` / `admin` → open the newest round → check attempts, help and audio use, and the note → refresh the page and confirm the round is still listed once.
+
+4. **Tricky words:** Play → on the **Tricky Words** card press Hear to hear what it is → Start. The round only uses words that took more than one try in recent rounds.
 
 **Reset Demo Data** (in the adult view) removes real rounds and restores the three "Sample data" rounds.

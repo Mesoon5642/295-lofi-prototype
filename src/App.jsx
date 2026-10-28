@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { SettingsContext } from './components/settingsContext.js'
-import { MATCH_THE_WORD, SAMPLE_CHILD } from './content/activities.js'
-import { startRound } from './game/index.js'
+import { MATCH_THE_WORD, PRACTICE_TRICKY_WORDS, SAMPLE_CHILD } from './content/activities.js'
+import { recentPracticeWords, startRound } from './game/index.js'
 import ActivityScreen from './screens/ActivityScreen.jsx'
 import ChooseActivityScreen from './screens/ChooseActivityScreen.jsx'
 import ParentScreen from './screens/ParentScreen.jsx'
@@ -11,6 +11,7 @@ import {
   createRoundId,
   getChildProfile,
   getInProgressRound,
+  getRounds,
   getSettings,
   saveRound,
   saveSettings,
@@ -18,13 +19,22 @@ import {
 
 // Screens: 'start' | 'choose' | 'activity' | 'summary' | 'parent'
 
-function createNewRound(childId) {
+// Words that took more than one try in recent completed rounds, most often tricky first.
+function getTrickyWords(childId) {
+  return recentPracticeWords(getRounds({ childId, status: 'completed' })).map(({ word }) => word)
+}
+
+// A Tricky Words round uses the child's recent tricky words as targets. With none left,
+// it falls back to a regular Match the Word round.
+function createNewRound(childId, activityId = MATCH_THE_WORD.id) {
+  const trickyWords = activityId === PRACTICE_TRICKY_WORDS.id ? getTrickyWords(childId) : []
   const round = startRound({
     id: createRoundId(),
     childId,
-    activity: MATCH_THE_WORD,
+    activity: trickyWords.length > 0 ? PRACTICE_TRICKY_WORDS : MATCH_THE_WORD,
     now: new Date().toISOString(),
     rng: Math.random,
+    targets: trickyWords.length > 0 ? trickyWords : undefined,
   })
   return saveRound(round) ?? round
 }
@@ -49,13 +59,13 @@ export default function App() {
 
   // Rounds are created in event handlers (never effects) so StrictMode
   // can't create duplicates.
-  function resumeOrStart() {
-    setRound(getInProgressRound(child.id, MATCH_THE_WORD.id) ?? createNewRound(child.id))
+  function resumeOrStart(activityId) {
+    setRound(getInProgressRound(child.id, activityId) ?? createNewRound(child.id, activityId))
     go('activity')
   }
 
   function playAgain() {
-    setRound(createNewRound(child.id))
+    setRound(createNewRound(child.id, round?.activityId))
     go('activity')
   }
 
@@ -71,7 +81,12 @@ export default function App() {
   if (screen === 'choose') {
     content = (
       <ChooseActivityScreen
-        hasRoundInProgress={getInProgressRound(child.id, MATCH_THE_WORD.id) !== null}
+        inProgress={{
+          [MATCH_THE_WORD.id]: getInProgressRound(child.id, MATCH_THE_WORD.id) !== null,
+          [PRACTICE_TRICKY_WORDS.id]:
+            getInProgressRound(child.id, PRACTICE_TRICKY_WORDS.id) !== null,
+        }}
+        practiceWords={getTrickyWords(child.id)}
         onStart={resumeOrStart}
         onBack={() => go('start')}
         focusHeading={navigated}

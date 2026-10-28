@@ -348,6 +348,14 @@ input {
 
 /* Choose activity */
 
+.activity-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+  width: 100%;
+}
+
 .activity-card {
   display: flex;
   flex-direction: column;
@@ -367,6 +375,13 @@ input {
 
 .activity-card__title {
   font-size: var(--fs-lead);
+}
+
+.activity-card__about {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
 }
 
 .activity-card__note {

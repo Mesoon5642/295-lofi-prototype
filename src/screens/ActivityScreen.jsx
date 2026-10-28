@@ -9,7 +9,7 @@ import ScreenHeading from '../components/ScreenHeading.jsx'
 import { SettingsContext } from '../components/settingsContext.js'
 import TopBar from '../components/TopBar.jsx'
 import WordChoice from '../components/WordChoice.jsx'
-import { FEEDBACK, MATCH_THE_WORD } from '../content/activities.js'
+import { ACTIVITIES, FEEDBACK, MATCH_THE_WORD } from '../content/activities.js'
 import { getCurrentQuestion, getFeedback, roundReducer } from '../game/index.js'
 import { saveRound } from '../storage/index.js'
 
@@ -38,6 +38,8 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
   const [round, dispatch] = useReducer(roundReducer, initialRound)
   const [audioAvailable] = useState(() => getSpeechSupport() === 'available')
   const { settings } = useContext(SettingsContext)
+  const activity = ACTIVITIES.find((a) => a.id === round.activityId) ?? MATCH_THE_WORD
+  const askExplanation = settings.explanations === 'on'
   const question = getCurrentQuestion(round)
   const feedback = getFeedback(question)
   const total = round.questions.length
@@ -95,7 +97,7 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
       <main className="screen screen--activity">
         <div className="activity-head">
           <ScreenHeading focusOnMount={focusHeading} className="screen-heading--small">
-            {MATCH_THE_WORD.title}
+            {activity.title}
           </ScreenHeading>
           <ProgressDots current={round.currentIndex + 1} total={total} />
         </div>
@@ -104,7 +106,7 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
           <button
             type="button"
             className="btn btn--secondary"
-            onClick={() => say(MATCH_THE_WORD.instruction)}
+            onClick={() => say(activity.instruction)}
             disabled={!audioAvailable}
           >
             <Icon name="speaker" />
@@ -132,7 +134,7 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
             <span className="visually-hidden">
               Word {round.currentIndex + 1} of {total}.{' '}
             </span>
-            {MATCH_THE_WORD.instruction}
+            {activity.instruction}
           </h2>
           <div className="question__body">
             <Picture pictureId={question.pictureId} className="question__picture" />
@@ -166,7 +168,7 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
           )}
         </div>
 
-        {question.correct && !question.explanationDone && (
+        {askExplanation && question.correct && !question.explanationDone && (
           <ExplanationForm
             key={round.currentIndex}
             onSave={(text) => finishExplanation({ type: 'SAVE_EXPLANATION', text })}

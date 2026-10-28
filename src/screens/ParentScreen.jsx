@@ -6,6 +6,7 @@ import ScreenHeading from '../components/ScreenHeading.jsx'
 import TopBar from '../components/TopBar.jsx'
 import ReadingSettings from '../components/ReadingSettings.jsx'
 import { formatDate } from '../components/formatDate.js'
+import { PRACTICE_TRICKY_WORDS } from '../content/activities.js'
 import { recentPracticeWords, summarizeRound } from '../game/index.js'
 import { getRounds, resetDemoData } from '../storage/index.js'
 
@@ -70,7 +71,8 @@ function RoundList({ rounds, onOpen }) {
                 <button type="button" className="round-list__button" onClick={() => onOpen(round.id)}>
                   <span className="round-list__date">{formatDate(round.completedAt ?? round.startedAt)}</span>
                   <span className="round-list__meta">
-                    {summary.totalWords} words
+                    {round.activityId === PRACTICE_TRICKY_WORDS.id && `${PRACTICE_TRICKY_WORDS.title} · `}
+                    {summary.totalWords} {summary.totalWords === 1 ? 'word' : 'words'}
                     {summary.practiceWords.length > 0 &&
                       ` · Practice: ${summary.practiceWords.join(', ')}`}
                   </span>

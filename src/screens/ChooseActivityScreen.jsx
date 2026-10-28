@@ -1,10 +1,58 @@
+import { useState } from 'react'
+import { getSpeechSupport, speak } from '../audio/speech.js'
 import Icon from '../components/Icon.jsx'
 import Picture from '../components/Picture.jsx'
 import ScreenHeading from '../components/ScreenHeading.jsx'
 import TopBar from '../components/TopBar.jsx'
-import { MATCH_THE_WORD } from '../content/activities.js'
+import { MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../content/activities.js'
 
-export default function ChooseActivityScreen({ hasRoundInProgress, onStart, onBack, focusHeading }) {
+// One game: picture, title, description with a Hear button, and Start / Keep going.
+function GameCard({ activity, pictureId, note, hasRoundInProgress, onStart, audioAvailable }) {
+  const titleId = `${activity.id}-title`
+  return (
+    <section className="activity-card" aria-labelledby={titleId}>
+      <Picture pictureId={pictureId} decorative className="activity-card__picture" />
+      <h2 id={titleId} className="activity-card__title">
+        {activity.title}
+      </h2>
+      <div className="activity-card__about">
+        <p className="activity-card__text">{activity.description}</p>
+        <button
+          type="button"
+          className="btn btn--secondary speaker-button"
+          onClick={() => speak(`${activity.title}. ${activity.description}`)}
+          disabled={!audioAvailable}
+        >
+          <Icon name="speaker" />
+          <span>Hear</span>
+          <span className="visually-hidden"> about {activity.title}</span>
+        </button>
+      </div>
+      {note && <p className="activity-card__note">{note}</p>}
+      {hasRoundInProgress && (
+        <p className="activity-card__note">You can pick up where you left off.</p>
+      )}
+      <button type="button" className="btn btn--primary btn--huge" onClick={onStart}>
+        <Icon name="play" size={36} />
+        <span>{hasRoundInProgress ? 'Keep going' : 'Start'}</span>
+      </button>
+    </section>
+  )
+}
+
+// `practiceWords`: recently tricky words. The Tricky Words card shows when there are
+// some, or when a practice round is already in progress.
+export default function ChooseActivityScreen({
+  inProgress,
+  practiceWords,
+  onStart,
+  onBack,
+  focusHeading,
+}) {
+  const [audioAvailable] = useState(() => getSpeechSupport() === 'available')
+  const showPractice = practiceWords.length > 0 || inProgress[PRACTICE_TRICKY_WORDS.id]
+  const practiceCount = Math.min(practiceWords.length, PRACTICE_TRICKY_WORDS.questionCount)
+
   return (
     <>
       <TopBar
@@ -13,20 +61,34 @@ export default function ChooseActivityScreen({ hasRoundInProgress, onStart, onBa
       />
       <main className="screen screen--center">
         <ScreenHeading focusOnMount={focusHeading}>Choose a game</ScreenHeading>
-        <section className="activity-card" aria-labelledby="activity-title">
-          <Picture pictureId="cat" decorative className="activity-card__picture" />
-          <h2 id="activity-title" className="activity-card__title">
-            {MATCH_THE_WORD.title}
-          </h2>
-          <p className="activity-card__text">{MATCH_THE_WORD.instruction}</p>
-          {hasRoundInProgress && (
-            <p className="activity-card__note">You can pick up where you left off.</p>
+        {!audioAvailable && (
+          <p className="audio-note">
+            <Icon name="muted" />
+            <span>Audio unavailable</span>
+          </p>
+        )}
+        <div className="activity-cards">
+          <GameCard
+            activity={MATCH_THE_WORD}
+            pictureId="cat"
+            hasRoundInProgress={inProgress[MATCH_THE_WORD.id]}
+            onStart={() => onStart(MATCH_THE_WORD.id)}
+            audioAvailable={audioAvailable}
+          />
+          {showPractice && (
+            <GameCard
+              activity={PRACTICE_TRICKY_WORDS}
+              pictureId="dog"
+              note={
+                !inProgress[PRACTICE_TRICKY_WORDS.id] &&
+                `${practiceCount} ${practiceCount === 1 ? 'word' : 'words'} to practice`
+              }
+              hasRoundInProgress={inProgress[PRACTICE_TRICKY_WORDS.id]}
+              onStart={() => onStart(PRACTICE_TRICKY_WORDS.id)}
+              audioAvailable={audioAvailable}
+            />
           )}
-          <button type="button" className="btn btn--primary btn--huge" onClick={onStart}>
-            <Icon name="play" size={36} />
-            <span>{hasRoundInProgress ? 'Keep going' : 'Start'}</span>
-          </button>
-        </section>
+        </div>
       </main>
     </>
   )
