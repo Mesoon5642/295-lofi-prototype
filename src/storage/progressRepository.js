@@ -7,7 +7,12 @@ import { DEFAULT_SETTINGS, STORAGE_VERSION, createSeedState } from './seedData.j
 
 export const STORAGE_KEY = 'reading-game:v1'
 
-const TEXT_SIZES = ['standard', 'large']
+// Allowed values for each setting; anything else is ignored by saveSettings.
+const SETTING_VALUES = {
+  textSize: ['standard', 'large'],
+  font: ['standard', 'dyslexic'],
+  wordAudio: ['on', 'off'],
+}
 
 // Used only if localStorage is missing or throws (e.g. blocked site data),
 // so the app still works for the session.
@@ -148,8 +153,10 @@ export function getSettings() {
 export function saveSettings(partial = {}) {
   const state = loadState()
   const settings = { ...DEFAULT_SETTINGS, ...state.settings }
-  if (isPlainObject(partial) && TEXT_SIZES.includes(partial.textSize)) {
-    settings.textSize = partial.textSize
+  if (isPlainObject(partial)) {
+    for (const [key, allowed] of Object.entries(SETTING_VALUES)) {
+      if (allowed.includes(partial[key])) settings[key] = partial[key]
+    }
   }
   state.settings = settings
   writeState(state)

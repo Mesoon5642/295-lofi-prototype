@@ -5,6 +5,8 @@ function Cat() {
   return (
     <>
       <rect width="200" height="200" rx="28" fill="#efe9f8" />
+      {/* Tail: a wider dark stroke underneath gives it the same outline as the body. */}
+      <path d="M146 172 Q188 150 170 112" stroke="#8a4b14" strokeWidth="22" strokeLinecap="round" fill="none" />
       <path d="M146 172 Q188 150 170 112" stroke="#f0a04b" strokeWidth="14" strokeLinecap="round" fill="none" />
       <ellipse cx="100" cy="168" rx="52" ry="26" fill="#f0a04b" stroke="#8a4b14" strokeWidth="4" />
       <polygon points="52,80 60,26 96,56" fill="#f0a04b" stroke="#8a4b14" strokeWidth="4" strokeLinejoin="round" />
@@ -28,20 +30,23 @@ function Dog() {
   return (
     <>
       <rect width="200" height="200" rx="28" fill="#fbf3dc" />
+      {/* Body sits behind the head so the collar has a neck to wrap around. */}
+      <ellipse cx="100" cy="170" rx="48" ry="26" fill="#b07a4a" stroke="#5e3b1d" strokeWidth="4" />
+      <rect x="66" y="153" width="68" height="12" rx="6" fill="#2f6fb3" />
+      <circle cx="100" cy="172" r="7" fill="#f2c230" stroke="#9a7a00" strokeWidth="2" />
       <ellipse cx="100" cy="104" rx="50" ry="52" fill="#b07a4a" stroke="#5e3b1d" strokeWidth="4" />
-      <ellipse cx="52" cy="100" rx="18" ry="40" fill="#6e4524" transform="rotate(16 52 100)" />
-      <ellipse cx="148" cy="100" rx="18" ry="40" fill="#6e4524" transform="rotate(-16 148 100)" />
+      <ellipse cx="52" cy="100" rx="18" ry="40" fill="#6e4524" stroke="#5e3b1d" strokeWidth="4" transform="rotate(16 52 100)" />
+      <ellipse cx="148" cy="100" rx="18" ry="40" fill="#6e4524" stroke="#5e3b1d" strokeWidth="4" transform="rotate(-16 148 100)" />
       <ellipse cx="121" cy="86" rx="15" ry="13" fill="#8a5a32" />
       <circle cx="80" cy="90" r="7.5" fill="#2b2b2b" />
       <circle cx="120" cy="90" r="7.5" fill="#2b2b2b" />
       <circle cx="82" cy="87" r="2.5" fill="#fff" />
       <circle cx="122" cy="87" r="2.5" fill="#fff" />
       <ellipse cx="100" cy="130" rx="30" ry="23" fill="#f1d9b5" />
-      <path d="M93 142q7 18 14 0z" fill="#e5787f" />
+      {/* Tongue starts under the mouth line so it hangs from the mouth. */}
+      <path d="M92 137q8 20 16 0z" fill="#e5787f" />
       <path d="M100 124v10M100 134q-10 9-19 1M100 134q10 9 19 1" stroke="#2b2b2b" strokeWidth="3" fill="none" strokeLinecap="round" />
       <ellipse cx="100" cy="118" rx="13" ry="9" fill="#2b2b2b" />
-      <rect x="66" y="153" width="68" height="12" rx="6" fill="#2f6fb3" />
-      <circle cx="100" cy="172" r="7" fill="#f2c230" stroke="#9a7a00" strokeWidth="2" />
     </>
   )
 }
@@ -81,11 +86,12 @@ function Hat() {
     <>
       <rect width="200" height="200" rx="28" fill="#fde9df" />
       <ellipse cx="100" cy="152" rx="74" ry="17" fill="#2e3a59" stroke="#1b2338" strokeWidth="4" />
-      <path d="M58 54h84v96H58z" fill="#3b4a70" stroke="#1b2338" strokeWidth="4" strokeLinejoin="round" />
+      {/* Crown base and band curve like the brim, so the crown sits on it in perspective. */}
+      <path d="M58 54v96a42 9 0 0 0 84 0V54z" fill="#3b4a70" stroke="#1b2338" strokeWidth="4" strokeLinejoin="round" />
       <ellipse cx="100" cy="54" rx="42" ry="9" fill="#46557d" stroke="#1b2338" strokeWidth="4" />
-      <rect x="60" y="118" width="80" height="20" fill="#c8553d" />
+      <path d="M60 118a40 8 0 0 0 80 0v20a40 8 0 0 1-80 0z" fill="#c8553d" />
       <rect x="70" y="66" width="10" height="46" rx="5" fill="#5a6a94" />
-      <circle cx="124" cy="128" r="7" fill="#ffd23f" />
+      <circle cx="124" cy="134" r="7" fill="#ffd23f" />
     </>
   )
 }
@@ -94,14 +100,16 @@ function Bus() {
   return (
     <>
       <rect width="200" height="200" rx="28" fill="#e3f2ea" />
-      <rect x="12" y="160" width="176" height="7" rx="3.5" fill="#9aa5b1" />
+      {/* Road top (y=162) touches the bottom of the wheels. */}
+      <rect x="12" y="162" width="176" height="7" rx="3.5" fill="#9aa5b1" />
       <rect x="20" y="56" width="160" height="90" rx="14" fill="#f7c33c" stroke="#9a6b00" strokeWidth="4" />
+      {/* Stripe goes under the windows and door, inside the body outline. */}
+      <rect x="22" y="108" width="130" height="7" fill="#3a3a3a" />
       {[32, 62, 92, 122].map((x) => (
         <rect key={x} x={x} y="68" width="24" height="28" rx="4" fill="#cfe8f7" stroke="#6b5300" strokeWidth="2.5" />
       ))}
       <rect x="152" y="68" width="18" height="60" rx="3" fill="#cfe8f7" stroke="#6b5300" strokeWidth="2.5" />
-      <rect x="20" y="108" width="132" height="7" fill="#3a3a3a" />
-      <circle cx="174" cy="136" r="4" fill="#fff6c2" stroke="#6b5300" strokeWidth="2" />
+      <circle cx="170" cy="136" r="4" fill="#fff6c2" stroke="#6b5300" strokeWidth="2" />
       <circle cx="58" cy="146" r="16" fill="#2b2b2b" />
       <circle cx="58" cy="146" r="6" fill="#c3ccd6" />
       <circle cx="142" cy="146" r="16" fill="#2b2b2b" />

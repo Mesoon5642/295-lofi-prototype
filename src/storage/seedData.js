@@ -6,7 +6,7 @@ import { MATCH_THE_WORD, SAMPLE_CHILD } from '../content/activities.js'
 
 export const STORAGE_VERSION = 1
 
-export const DEFAULT_SETTINGS = { textSize: 'standard' }
+export const DEFAULT_SETTINGS = { textSize: 'standard', font: 'standard', wordAudio: 'on' }
 
 // Hints come straight from the activity content so they never drift.
 const HINTS = Object.fromEntries(MATCH_THE_WORD.items.map((item) => [item.word, item.hint]))

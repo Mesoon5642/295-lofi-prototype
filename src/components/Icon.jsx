@@ -1,7 +1,7 @@
 // Simple line icons. Always decorative: the text next to the icon is the label.
 
 const PATHS = {
-  back: <path d="M15 5l-7 7 7 7" />,
+  back: <path d="M15.5 5l-7 7 7 7" />,
   help: (
     <>
       <circle cx="12" cy="12" r="10" />
@@ -20,15 +20,15 @@ const PATHS = {
   ),
   speaker: (
     <>
-      <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor" />
-      <path d="M16.5 9a4 4 0 0 1 0 6" />
-      <path d="M19 6.5a7.5 7.5 0 0 1 0 11" />
+      <path d="M3.5 9h4l5-4v14l-5-4h-4z" fill="currentColor" />
+      <path d="M16 9a4 4 0 0 1 0 6" />
+      <path d="M18.5 6.5a7.5 7.5 0 0 1 0 11" />
     </>
   ),
   muted: (
     <>
-      <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor" />
-      <path d="M16 9.5l5 5M21 9.5l-5 5" />
+      <path d="M3.5 9h4l5-4v14l-5-4h-4z" fill="currentColor" />
+      <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" />
     </>
   ),
   pause: (
@@ -39,7 +39,7 @@ const PATHS = {
   ),
   next: <path d="M5 12h13M13 6l6 6-6 6" />,
   check: <path d="M5 12.5l4.5 4.5L19 7" />,
-  retry: <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4v4.5H9" />,
+  retry: <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 8.5M4.5 4v4.5H9" />,
   home: <path d="M3 11l9-7 9 7M5.5 9.5V20h13V9.5M10 20v-5h4v5" />,
   star: (
     <path
@@ -47,13 +47,22 @@ const PATHS = {
       fill="currentColor"
     />
   ),
-  flag: <path d="M5 21V4M5 4h11l-2 4 2 4H5" />,
+  flag: <path d="M6 21V4M6 4h12l-2.5 4 2.5 4H6" />,
   bulb: (
     <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" />
   ),
   text: <path d="M3 19l5-14 5 14M5 14h6M14 19l3.5-9 3.5 9M15.2 16h4.6" />,
   chat: <path d="M4 5h16v11H9l-5 4z" />,
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  sliders: (
+    <>
+      <path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" />
+      <circle cx="15" cy="6" r="2" />
+      <circle cx="9" cy="12" r="2" />
+      <circle cx="17" cy="18" r="2" />
+    </>
+  ),
 }
 
 export default function Icon({ name, size = 28 }) {

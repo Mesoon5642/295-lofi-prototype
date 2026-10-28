@@ -1,4 +1,4 @@
-import { useEffect, useId, useReducer, useRef, useState } from 'react'
+import { useContext, useEffect, useId, useReducer, useRef, useState } from 'react'
 import { getSpeechSupport, speak } from '../audio/speech.js'
 import ExplanationForm from '../components/ExplanationForm.jsx'
 import Icon from '../components/Icon.jsx'
@@ -6,6 +6,7 @@ import PauseDialog from '../components/PauseDialog.jsx'
 import Picture from '../components/Picture.jsx'
 import ProgressDots from '../components/ProgressDots.jsx'
 import ScreenHeading from '../components/ScreenHeading.jsx'
+import { SettingsContext } from '../components/settingsContext.js'
 import TopBar from '../components/TopBar.jsx'
 import WordChoice from '../components/WordChoice.jsx'
 import { FEEDBACK, MATCH_THE_WORD } from '../content/activities.js'
@@ -36,6 +37,7 @@ function Feedback({ kind, attempts }) {
 export default function ActivityScreen({ initialRound, onBack, onComplete, focusHeading }) {
   const [round, dispatch] = useReducer(roundReducer, initialRound)
   const [audioAvailable] = useState(() => getSpeechSupport() === 'available')
+  const { settings } = useContext(SettingsContext)
   const question = getCurrentQuestion(round)
   const feedback = getFeedback(question)
   const total = round.questions.length
@@ -144,6 +146,7 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
                   onSelect={(w) => dispatch({ type: 'SELECT', word: w })}
                   onSpeak={say}
                   audioAvailable={audioAvailable}
+                  showSpeaker={settings.wordAudio === 'on'}
                 />
               ))}
             </ul>

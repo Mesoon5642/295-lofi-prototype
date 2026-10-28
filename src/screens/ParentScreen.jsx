@@ -4,12 +4,25 @@ import RoundDetail from '../components/RoundDetail.jsx'
 import SampleBadge from '../components/SampleBadge.jsx'
 import ScreenHeading from '../components/ScreenHeading.jsx'
 import TopBar from '../components/TopBar.jsx'
+import ReadingSettings from '../components/ReadingSettings.jsx'
 import { formatDate } from '../components/formatDate.js'
 import { recentPracticeWords, summarizeRound } from '../game/index.js'
 import { getRounds, resetDemoData } from '../storage/index.js'
 
 function loadRounds(childId) {
   return getRounds({ childId, status: 'completed' })
+}
+
+function ReadingSettingsPanel({ childName }) {
+  return (
+    <section className="panel" aria-labelledby="settings-title">
+      <h2 id="settings-title" className="panel__title">
+        Reading settings
+      </h2>
+      <p className="panel__note">Changes how {childName}&rsquo;s reading screens look.</p>
+      <ReadingSettings />
+    </section>
+  )
 }
 
 function PracticeWords({ rounds }) {
@@ -137,6 +150,7 @@ export default function ParentScreen({ child, onBack, focusHeading }) {
     <>
       <TopBar
         onBack={openRound ? () => setOpenId(null) : onBack}
+        showSettings={false}
         helpTip="Pick a round to see each word. Words that took more than one try are marked Needs practice."
       />
       <main className="screen screen--parent">
@@ -155,6 +169,7 @@ export default function ParentScreen({ child, onBack, focusHeading }) {
             <p className="status" role="status">
               {status}
             </p>
+            <ReadingSettingsPanel childName={child.name} />
             <PracticeWords rounds={rounds} />
             <RoundList rounds={rounds} onOpen={setOpenId} />
             <ResetDemo onReset={handleReset} />

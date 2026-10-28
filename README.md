@@ -29,6 +29,6 @@ Screens talk only to `storage/`, never to localStorage. To move to the planned E
 
 1. **Independent practice:** Play → Start → answer all five → "You finished 5 words!"
 2. **Using support:** choose a wrong word ("Let's try again") → Help (shows the first-letter hint) → a word's Hear button → choose the right word → type a note or Skip → Pause / Continue → Next.
-3. **Adult review:** Home → Parent or Teacher → open the newest round → check attempts, help and audio use, and the note → refresh the page and confirm the round is still listed once.
+3. **Adult review:** Home → Parent or Teacher (top-left of the top bar) → sign in with `admin` / `admin` → open the newest round → check attempts, help and audio use, and the note → refresh the page and confirm the round is still listed once.
 
 **Reset Demo Data** (in the adult view) removes real rounds and restores the three "Sample data" rounds.

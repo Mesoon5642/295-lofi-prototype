@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { TextSizeContext } from './components/textSizeContext.js'
+import { SettingsContext } from './components/settingsContext.js'
 import { MATCH_THE_WORD, SAMPLE_CHILD } from './content/activities.js'
 import { startRound } from './game/index.js'
 import ActivityScreen from './screens/ActivityScreen.jsx'
@@ -31,16 +31,16 @@ function createNewRound(childId) {
 
 export default function App() {
   const [child] = useState(() => getChildProfile() ?? SAMPLE_CHILD)
-  const [textSize, setTextSizeState] = useState(() => getSettings().textSize)
+  const [settings, setSettings] = useState(() => getSettings())
   const [screen, setScreen] = useState('start')
   const [round, setRound] = useState(null)
   // Only move focus to headings after the first navigation, not on page load.
   const [navigated, setNavigated] = useState(false)
 
-  const setTextSize = useCallback((value) => {
-    setTextSizeState(saveSettings({ textSize: value }).textSize)
+  const updateSettings = useCallback((partial) => {
+    setSettings(saveSettings(partial))
   }, [])
-  const textSizeValue = useMemo(() => ({ textSize, setTextSize }), [textSize, setTextSize])
+  const settingsValue = useMemo(() => ({ settings, updateSettings }), [settings, updateSettings])
 
   const go = useCallback((next) => {
     setNavigated(true)
@@ -109,11 +109,14 @@ export default function App() {
     )
   }
 
+  // The settings are for the child's screens; the parent/teacher view always looks standard.
+  const look = screen === 'parent' ? { textSize: 'standard', font: 'standard' } : settings
+
   return (
-    <TextSizeContext value={textSizeValue}>
-      <div className="app" data-text-size={textSize}>
+    <SettingsContext value={settingsValue}>
+      <div className="app" data-text-size={look.textSize} data-font={look.font}>
         {content}
       </div>
-    </TextSizeContext>
+    </SettingsContext>
   )
 }

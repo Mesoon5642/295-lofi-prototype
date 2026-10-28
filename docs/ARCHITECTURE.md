@@ -15,6 +15,7 @@ src/
     progressRepository.js
     seedData.js
   audio/speech.js            getSpeechSupport, speak
+  auth/credentials.js        checkCredentials, checkParentPassword (placeholder grown-up checks)
   components/                presentational React pieces
   screens/                   one file per screen
   App.jsx                    screen state machine (no router)
@@ -102,7 +103,7 @@ All functions are synchronous and return plain JSON-safe copies, so callers can'
 - `getRound(id) => Round | null`
 - `getRounds({ childId, status } = {}) => Round[]`: newest first (by completedAt ?? startedAt)
 - `getInProgressRound(childId, activityId) => Round | null`: the most recent in-progress round
-- `getSettings() => { textSize: 'standard' | 'large' }` and `saveSettings(partial) => settings`
+- `getSettings() => { textSize: 'standard' | 'large', font: 'standard' | 'dyslexic', wordAudio: 'on' | 'off' }` and `saveSettings(partial) => settings` (invalid values are ignored; missing keys get defaults)
 - `resetDemoData()`: removes all real rounds and restores seed data. Settings are kept.
 
 seedData.js exports `SEED_ROUNDS` (2–3 completed rounds for Alex with `isSample: true`, ids prefixed `sample-`, past dates, a mix of 1-attempt and multi-attempt words, at least one explanation note, some hint/audio use), plus `createSeedState()`.
@@ -117,4 +118,7 @@ seedData.js exports `SEED_ROUNDS` (2–3 completed rounds for Alex with `isSampl
 - Resume on refresh: Start on the Choose activity screen resumes the existing in-progress round for Alex if there is one, otherwise starts a new round. The activity screen saves through `saveRound` after every state change.
 - "Play Again" always starts a new round.
 - Picture accessibility: `role="img"` with `aria-label="Mystery picture"` (doesn't reveal the answer).
-- Help is in the top-right and Back is in the top-left of a shared top bar on every screen.
+- Help is in the top-right and Back is in the top-left of a shared top bar on every screen. On the child's screens the middle holds a Settings button.
+- Parent/teacher access: a "Parent or Teacher" button (same quiet style as Back and Help) sits in the top bar on the Start screen (where Back would be). It opens a sign-in modal that only its X button closes (backdrop clicks and Escape do nothing). `checkCredentials(username, password)` in `auth/credentials.js` accepts `admin` / `admin` until there is a backend. Sign-in is asked for every time.
+- Reading settings (text size; font: Standard / OpenDyslexic; read words aloud: On / Off) are for the child's screens. With word audio off, the Hear button beside each answer word is hidden; Hear Instructions is always available. The settings are for the child, but children can't change them directly. Grown-ups change them in two places: the "Reading settings" panel in the parent/teacher view, or the top bar's Settings button, which opens a modal behind the parent/teacher password (`checkParentPassword`, `admin` for now) and applies changes live, mid-round. That modal closes the same way as the sign-in modal (X only), and asks for the password every time.
+- The parent/teacher view always uses standard text size and the standard font, and has no Settings button.
