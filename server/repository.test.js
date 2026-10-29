@@ -3,82 +3,57 @@ import mongoose from 'mongoose'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../src/content/activities.js'
 import { DEFAULT_SETTINGS } from '../src/content/settings.js'
-import { connectDatabase, disconnectDatabase } from './db.js'
-import { Adult, ChildProfile, Round } from './models/index.js'
+import { createRng } from '../src/game/index.js'
 import {
-  checkParentPassword,
-  getChildProfile,
+  ELEVATED_MS,
+  canAccessChild,
+  clearFailures,
+  findSession,
+  isElevated,
+  lock,
+  signIn,
+  signOut,
+  unlock,
+} from './auth/sessions.js'
+import { connectDatabase, disconnectDatabase } from './db.js'
+import { Adult, ChildProfile, Image, Round, Session, Word } from './models/index.js'
+import {
+  applyRoundAction,
+  createRound,
+  getChild,
+  getGames,
+  getImage,
   getRound,
   getRounds,
-  getSettings,
+  getTrickyWords,
+  listWords,
   resetDemoData,
-  saveRound,
   saveSettings,
-  signIn,
 } from './repository.js'
 import { reseed, seedIfEmpty } from './seed/seed.js'
 import { SEED_ADULTS, SEED_CHILD, SEED_ROUNDS } from './seed/seedData.js'
+import { SEED_IMAGES, SEED_WORDS } from './seed/words.js'
 
-const WORDS = MATCH_THE_WORD.items.map((item) => item.word)
+const WORDS = SEED_WORDS.map((item) => item.word)
 const CHILD_ID = SEED_CHILD.id
+const NOW = new Date('2026-10-28T10:00:00.000Z')
 
-function makeQuestion(target, overrides = {}) {
-  const item = MATCH_THE_WORD.items.find((i) => i.word === target)
-  const others = WORDS.filter((w) => w !== target)
-  return {
-    target,
-    pictureId: item.pictureId,
-    hint: item.hint,
-    options: [others[0], target, others[1]],
-    selections: [],
-    attempts: 0,
-    correct: false,
-    hintUsed: false,
-    audioUsed: false,
-    explanation: null,
-    explanationDone: false,
-    ...overrides,
+// Every word the seed rounds flagged (more than one try), most often first.
+const SEED_TRICKY = ['hat', 'cat', 'dog']
+
+async function start(activityId = MATCH_THE_WORD.id, seed = 1) {
+  return createRound(CHILD_ID, activityId, { rng: createRng(seed), now: NOW })
+}
+
+// Answers every question correctly (and moves on) through the server.
+async function finish(roundId) {
+  let round = await getRound(roundId)
+  for (let i = 0; i < round.questions.length; i += 1) {
+    const q = round.questions[round.currentIndex]
+    await applyRoundAction(roundId, { type: 'SELECT', word: q.target })
+    round = await applyRoundAction(roundId, { type: 'NEXT' }, { now: NOW })
   }
-}
-
-function makeRound(overrides = {}) {
-  return {
-    id: 'round-test-1',
-    childId: CHILD_ID,
-    activityId: MATCH_THE_WORD.id,
-    startedAt: '2026-10-22T10:00:00.000Z',
-    completedAt: null,
-    status: 'in_progress',
-    isSample: false,
-    currentIndex: 0,
-    paused: false,
-    questions: WORDS.map((w) => makeQuestion(w)),
-    ...overrides,
-  }
-}
-
-function solved(target) {
-  return makeQuestion(target, {
-    selections: [target],
-    attempts: 1,
-    correct: true,
-    explanationDone: true,
-  })
-}
-
-function makeCompletedRound(overrides = {}) {
-  return makeRound({
-    status: 'completed',
-    completedAt: '2026-10-22T10:05:00.000Z',
-    currentIndex: 4,
-    questions: WORDS.map(solved),
-    ...overrides,
-  })
-}
-
-async function inProgress(childId = CHILD_ID, activityId = MATCH_THE_WORD.id) {
-  const [latest] = await getRounds({ childId, activityId, status: 'in_progress' })
-  return latest ?? null
+  return round
 }
 
 // A throwaway embedded MongoDB for this file, never MONGODB_URI.
@@ -91,6 +66,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  clearFailures()
   await reseed()
 })
 
@@ -117,7 +93,7 @@ describe('seed data', () => {
       expect(round.questions).toHaveLength(5)
       expect(round.questions.map((q) => q.target).sort()).toEqual([...WORDS].sort())
       for (const q of round.questions) {
-        const item = MATCH_THE_WORD.items.find((i) => i.word === q.target)
+        const item = SEED_WORDS.find((i) => i.word === q.target)
         expect(q.pictureId).toBe(item.pictureId)
         expect(q.hint).toBe(item.hint)
         expect(q.options).toHaveLength(3)
@@ -147,286 +123,341 @@ describe('seed data', () => {
     expect(audio).toBeGreaterThan(0)
   })
 
-  it('every sample round passes the Round schema', async () => {
-    for (const { id, ...round } of SEED_ROUNDS) {
-      await expect(new Round({ ...round, _id: id }).validate()).resolves.toBeUndefined()
-    }
+  it('every seed word has a seed image', () => {
+    const imageIds = SEED_IMAGES.map((image) => image.id)
+    for (const word of SEED_WORDS) expect(imageIds).toContain(word.pictureId)
   })
 })
 
 describe('seeding', () => {
-  it('writes Alex, the grown-up account, and the sample rounds exactly', async () => {
-    expect(await getChildProfile(CHILD_ID)).toEqual({ id: CHILD_ID, name: 'Alex' })
-    expect(await getChildProfile('child-nobody')).toBeNull()
-    expect(await getSettings(CHILD_ID)).toEqual(DEFAULT_SETTINGS)
+  it('writes the images, word list, Alex, the grown-up account, and the sample rounds', async () => {
+    expect(await listWords()).toEqual([...SEED_WORDS].sort((a, b) => a.word.localeCompare(b.word)))
+    expect(await Image.countDocuments()).toBe(SEED_IMAGES.length)
+    expect(await getChild(CHILD_ID)).toEqual({ id: CHILD_ID, name: 'Alex', settings: DEFAULT_SETTINGS })
+    expect(await getChild('child-nobody')).toBeNull()
     expect(await getRounds()).toEqual([...SEED_ROUNDS].reverse())
     expect(await Adult.countDocuments()).toBe(SEED_ADULTS.length)
   })
 
-  it('stores only a hash of the grown-up password and never returns it', async () => {
+  it('stores images as bytes with their type', async () => {
+    const cat = await getImage('cat')
+    expect(cat.contentType).toBe('image/svg+xml')
+    expect(Buffer.isBuffer(cat.data)).toBe(true)
+    expect(cat.data.toString('utf8')).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/)
+    expect(await getImage('nope')).toBeNull()
+  })
+
+  it('stores only a hash of the grown-up password', async () => {
     const stored = await Adult.findOne({ username: 'admin' }).lean()
     expect(stored.passwordHash).toMatch(/^[0-9a-f]{128}$/)
-    expect(stored).not.toHaveProperty('password')
     expect(Object.keys(stored).sort()).toEqual(
       ['__v', '_id', 'childIds', 'passwordHash', 'passwordSalt', 'role', 'username'],
     )
-    const account = await signIn('admin', 'admin')
-    expect(account).toEqual({ id: expect.any(String), username: 'admin', role: 'parent', childIds: [CHILD_ID] })
   })
 
-  it('seedIfEmpty only writes into an empty database', async () => {
-    await saveRound(makeRound())
-    expect(await seedIfEmpty()).toBe(false)
-    expect(await getRound('round-test-1')).not.toBeNull()
+  it('seedIfEmpty only writes into empty parts of the database', async () => {
+    await start()
+    expect(await seedIfEmpty()).toEqual([])
+    expect(await getRounds({ status: 'in_progress' })).toHaveLength(1)
 
-    await Promise.all([ChildProfile.deleteMany({}), Adult.deleteMany({}), Round.deleteMany({})])
-    expect(await seedIfEmpty()).toBe(true)
+    // A database from before words and images were stored keeps its rounds.
+    await Promise.all([Word.deleteMany({}), Image.deleteMany({})])
+    expect(await seedIfEmpty()).toEqual(['images', 'words'])
+    expect(await listWords()).toHaveLength(SEED_WORDS.length)
+    expect(await getRounds({ status: 'in_progress' })).toHaveLength(1)
+
+    const models = [ChildProfile, Adult, Round, Session, Word, Image]
+    await Promise.all(models.map((model) => model.deleteMany({})))
+    expect(await seedIfEmpty()).toEqual(['images', 'words', 'profiles, accounts, sample rounds'])
     expect(await getRounds()).toHaveLength(SEED_ROUNDS.length)
-    expect(await ChildProfile.countDocuments()).toBe(1)
   })
 
   it('uses the expected collection names', async () => {
+    await signIn('admin', 'admin')
     const names = (await mongoose.connection.db.listCollections().toArray()).map((c) => c.name)
-    expect(names.sort()).toEqual(['adults', 'childProfiles', 'rounds'])
+    expect(names.sort()).toEqual(['adults', 'childProfiles', 'images', 'rounds', 'sessions', 'words'])
   })
 })
 
-describe('saveRound', () => {
-  it('keeps sample rounds distinguishable from real ones', async () => {
-    await saveRound(makeCompletedRound())
-    const rounds = await getRounds({ status: 'completed' })
-    expect(rounds.filter((r) => r.isSample)).toHaveLength(SEED_ROUNDS.length)
-    const real = rounds.filter((r) => !r.isSample)
-    expect(real).toHaveLength(1)
-    expect(real[0].id).toBe('round-test-1')
-    expect(real[0].isSample).toBe(false)
+describe('schemas', () => {
+  it('reject rounds that break the Round schema', async () => {
+    for (const { id, ...round } of SEED_ROUNDS) {
+      await expect(new Round({ ...round, _id: id }).validate()).resolves.toBeUndefined()
+    }
+    const [{ id, ...sample }] = SEED_ROUNDS
+    const broken = [
+      { ...sample, status: 'finished' },
+      { ...sample, activityId: 'other-activity' },
+      { ...sample, questions: [] },
+      { ...sample, currentIndex: -1 },
+    ]
+    for (const round of broken) {
+      await expect(new Round({ ...round, _id: id }).validate()).rejects.toThrow()
+    }
   })
 
-  it('returns exactly what was saved, in the same shape', async () => {
-    const round = makeRound()
-    expect(await saveRound(round)).toEqual(round)
+  it('reject words and images that break their schemas', async () => {
+    await expect(new Word({ _id: 'Cat 1', hint: 'h', pictureId: 'cat' }).validate()).rejects.toThrow()
+    await expect(new Word({ _id: 'ice cream', hint: 'h', pictureId: 'x' }).validate()).resolves.toBeUndefined()
+    await expect(
+      new Image({ _id: 'x', contentType: 'text/html', data: Buffer.from('<p>') }).validate(),
+    ).rejects.toThrow()
+    await expect(
+      new Image({ _id: 'x', contentType: 'image/png', data: Buffer.alloc(0) }).validate(),
+    ).rejects.toThrow()
+  })
+})
+
+describe('createRound', () => {
+  it('builds a fresh Match the Word round from the database word list', async () => {
+    const { round, created } = await start()
+    expect(created).toBe(true)
+    expect(round).toMatchObject({
+      childId: CHILD_ID,
+      activityId: MATCH_THE_WORD.id,
+      startedAt: NOW.toISOString(),
+      completedAt: null,
+      status: 'in_progress',
+      isSample: false,
+      currentIndex: 0,
+    })
+    expect(round.id).toMatch(/^round-[0-9a-f-]{36}$/)
+    expect(round.questions.map((q) => q.target).sort()).toEqual([...WORDS].sort())
+    for (const q of round.questions) {
+      expect(q.hint).toBe(SEED_WORDS.find((w) => w.word === q.target).hint)
+    }
     expect(await getRound(round.id)).toEqual(round)
   })
 
-  it('updates an in-progress round in place without duplicating it', async () => {
-    await saveRound(makeRound())
-    const updated = makeRound({ currentIndex: 1 })
-    updated.questions[0] = solved('cat')
-    expect(await saveRound(updated)).toEqual(updated)
-
-    expect(await Round.countDocuments({ _id: 'round-test-1' })).toBe(1)
-    expect(await inProgress()).toEqual(updated)
-    expect(await getRound('round-test-1')).toEqual(updated)
+  it('uses words added to the database', async () => {
+    await Word.create({ _id: 'pig', hint: 'Starts with p.', pictureId: 'cat' })
+    await Word.deleteOne({ _id: 'bus' })
+    const { round } = await start()
+    const targets = round.questions.map((q) => q.target)
+    expect(targets).toContain('pig')
+    expect(targets).not.toContain('bus')
   })
 
-  it('finds no in-progress round for other children or activities', async () => {
-    expect(await inProgress()).toBeNull()
-    await saveRound(makeCompletedRound())
-    expect(await inProgress()).toBeNull()
-    await saveRound(makeRound({ id: 'round-other-child', childId: 'child-other' }))
-    expect(await inProgress()).toBeNull()
-    await saveRound(makeRound({ id: 'round-practice', activityId: PRACTICE_TRICKY_WORDS.id }))
-    expect(await inProgress()).toBeNull()
-    expect((await inProgress(CHILD_ID, PRACTICE_TRICKY_WORDS.id)).id).toBe('round-practice')
+  it('returns the in-progress round instead of starting a second one', async () => {
+    const first = await start()
+    const again = await start(MATCH_THE_WORD.id, 2)
+    expect(again).toEqual({ round: first.round, created: false })
+    const both = await Promise.all([start(PRACTICE_TRICKY_WORDS.id), start(PRACTICE_TRICKY_WORDS.id)])
+    expect(both[0].round.id).toBe(both[1].round.id)
+    expect(both.filter((result) => result.created)).toHaveLength(1)
   })
 
-  it('lists the most recent in-progress round first', async () => {
-    await saveRound(makeRound({ id: 'round-old', startedAt: '2026-10-21T09:00:00.000Z' }))
-    await saveRound(makeRound({ id: 'round-new', startedAt: '2026-10-22T09:00:00.000Z' }))
-    await saveRound(makeRound({ id: 'round-mid', startedAt: '2026-10-21T12:00:00.000Z' }))
-    expect((await inProgress()).id).toBe('round-new')
+  it('builds Tricky Words rounds from the child’s tricky words', async () => {
+    expect(await getTrickyWords(CHILD_ID)).toEqual(SEED_TRICKY)
+    const { round } = await start(PRACTICE_TRICKY_WORDS.id)
+    expect(round.activityId).toBe(PRACTICE_TRICKY_WORDS.id)
+    expect(round.questions.map((q) => q.target).sort()).toEqual([...SEED_TRICKY].sort())
+    for (const q of round.questions) expect(q.options).toHaveLength(3)
   })
 
-  it('counts a completed round once despite repeated saves', async () => {
-    const completed = makeCompletedRound()
-    await saveRound(makeRound())
-    await saveRound(completed)
-    await saveRound(completed)
-    await saveRound(completed)
-    expect(await Round.countDocuments({ _id: completed.id })).toBe(1)
-    expect(await getRound(completed.id)).toEqual(completed)
+  it('falls back to Match the Word when there are no tricky words', async () => {
+    await Round.deleteMany({})
+    const { round } = await start(PRACTICE_TRICKY_WORDS.id)
+    expect(round.activityId).toBe(MATCH_THE_WORD.id)
+    expect((await start(PRACTICE_TRICKY_WORDS.id)).round.id).toBe(round.id)
   })
 
-  it('never downgrades a completed round or changes its completedAt', async () => {
-    const completed = makeCompletedRound()
-    await saveRound(completed)
-
-    expect(await saveRound(makeRound({ currentIndex: 4 }))).toEqual(completed)
-    expect((await getRound(completed.id)).status).toBe('completed')
-
-    const recompleted = makeCompletedRound({ completedAt: '2026-10-22T11:00:00.000Z' })
-    expect((await saveRound(recompleted)).completedAt).toBe('2026-10-22T10:05:00.000Z')
-    expect(await getRound(completed.id)).toEqual(completed)
-    expect(await inProgress()).toBeNull()
-  })
-
-  it('rejects rounds without an id', async () => {
-    await expect(saveRound({})).rejects.toThrow(TypeError)
-    await expect(saveRound(null)).rejects.toThrow(TypeError)
-  })
-
-  it('rejects rounds that break the schema and stores nothing', async () => {
-    const broken = [
-      makeRound({ status: 'finished' }),
-      makeRound({ activityId: 'other-activity' }),
-      makeRound({ questions: [] }),
-      makeRound({ questions: [makeQuestion('cat', { options: ['cat', 'dog'] })] }),
-      makeRound({ currentIndex: -1 }),
-      makeRound({ childId: undefined }),
-    ]
-    for (const round of broken) {
-      await expect(saveRound(round)).rejects.toThrow(mongoose.Error.ValidationError)
-    }
-    expect(await getRound('round-test-1')).toBeNull()
+  it('rejects unknown activities and too-short word lists', async () => {
+    await expect(start('chess')).rejects.toMatchObject({ status: 400 })
+    await Word.deleteMany({ _id: { $in: ['cat', 'dog', 'sun'] } })
+    await expect(start()).rejects.toMatchObject({ status: 409 })
   })
 })
 
-describe('getRounds', () => {
-  it('orders newest first by completedAt, falling back to startedAt', async () => {
-    await saveRound(makeCompletedRound({ id: 'round-a', completedAt: '2026-10-21T08:00:00.000Z' }))
-    await saveRound(makeRound({ id: 'round-b', startedAt: '2026-10-22T09:00:00.000Z' }))
-    await saveRound(makeCompletedRound({ id: 'round-c', completedAt: '2026-10-22T12:00:00.000Z' }))
-    expect((await getRounds()).map((r) => r.id)).toEqual([
-      'round-c',
-      'round-b',
-      'round-a',
-      'sample-round-3',
-      'sample-round-2',
-      'sample-round-1',
-    ])
+describe('applyRoundAction', () => {
+  it('applies the shared reducer and saves the result', async () => {
+    const { round } = await start()
+    const q = round.questions[0]
+    const wrong = q.options.find((w) => w !== q.target)
+    await applyRoundAction(round.id, { type: 'USE_HINT' })
+    const after = await applyRoundAction(round.id, { type: 'SELECT', word: wrong })
+    expect(after.questions[0]).toMatchObject({ selections: [wrong], attempts: 1, correct: false, hintUsed: true })
+    expect(await getRound(round.id)).toEqual(after)
   })
 
-  it('filters by status, childId, and activityId', async () => {
-    await saveRound(makeRound({ id: 'round-in-progress' }))
-    await saveRound(makeCompletedRound({ id: 'round-done' }))
-    await saveRound(makeCompletedRound({ id: 'round-other', childId: 'child-other' }))
-    await saveRound(
-      makeCompletedRound({ id: 'round-practice', activityId: PRACTICE_TRICKY_WORDS.id }),
-    )
+  it('sets the completion time on the server and never changes a completed round', async () => {
+    const { round } = await start()
+    const done = await finish(round.id)
+    expect(done.status).toBe('completed')
+    expect(done.completedAt).toBe(NOW.toISOString())
 
-    expect((await getRounds({ status: 'in_progress' })).map((r) => r.id)).toEqual([
-      'round-in-progress',
-    ])
-    expect(await getRounds({ status: 'completed' })).toHaveLength(SEED_ROUNDS.length + 3)
-    expect((await getRounds({ childId: 'child-other' })).map((r) => r.id)).toEqual(['round-other'])
-    expect(
-      (await getRounds({ activityId: PRACTICE_TRICKY_WORDS.id })).map((r) => r.id),
-    ).toEqual(['round-practice'])
-    const alexDone = await getRounds({
-      childId: CHILD_ID,
-      status: 'completed',
-      activityId: MATCH_THE_WORD.id,
+    const later = new Date('2026-10-29T00:00:00.000Z')
+    for (const action of [{ type: 'NEXT' }, { type: 'PAUSE' }, { type: 'USE_HINT' }]) {
+      expect(await applyRoundAction(round.id, action, { now: later })).toEqual(done)
+    }
+    expect(await getRound(round.id)).toEqual(done)
+  })
+
+  it('applies concurrent actions one at a time', async () => {
+    const { round } = await start()
+    const wrong = round.questions[0].options.filter((w) => w !== round.questions[0].target)
+    await Promise.all(wrong.map((word) => applyRoundAction(round.id, { type: 'SELECT', word })))
+    expect((await getRound(round.id)).questions[0].attempts).toBe(2)
+  })
+
+  it('rejects unknown or malformed actions', async () => {
+    const { round } = await start()
+    const bad = [null, {}, { type: 'WIN' }, { type: 'SELECT' }, { type: 'SELECT', word: 3 }]
+    for (const action of bad) {
+      await expect(applyRoundAction(round.id, action)).rejects.toMatchObject({ status: 400 })
+    }
+  })
+
+  it('rejects notes longer than the schema allows', async () => {
+    const { round } = await start()
+    await applyRoundAction(round.id, { type: 'SELECT', word: round.questions[0].target })
+    await expect(
+      applyRoundAction(round.id, { type: 'SAVE_EXPLANATION', text: 'x'.repeat(201) }),
+    ).rejects.toThrow(mongoose.Error.ValidationError)
+  })
+
+  it('returns null for an unknown round', async () => {
+    expect(await applyRoundAction('round-nope', { type: 'PAUSE' })).toBeNull()
+  })
+})
+
+describe('getGames and getRounds', () => {
+  it('reports tricky words and each game’s in-progress round', async () => {
+    expect(await getGames(CHILD_ID)).toEqual({
+      trickyWords: SEED_TRICKY,
+      inProgress: { [MATCH_THE_WORD.id]: null, [PRACTICE_TRICKY_WORDS.id]: null },
     })
-    expect(alexDone.map((r) => r.id)).toEqual([
-      'round-done',
+    const { round } = await start()
+    expect((await getGames(CHILD_ID)).inProgress[MATCH_THE_WORD.id]).toBe(round.id)
+  })
+
+  it('only counts tricky words still in the word list', async () => {
+    await Word.deleteOne({ _id: 'hat' })
+    expect(await getTrickyWords(CHILD_ID)).toEqual(['cat', 'dog'])
+  })
+
+  it('orders newest first and filters', async () => {
+    const { round } = await start()
+    expect((await getRounds()).map((r) => r.id)).toEqual([
+      round.id,
       'sample-round-3',
       'sample-round-2',
       'sample-round-1',
     ])
+    expect((await getRounds({ status: 'in_progress' })).map((r) => r.id)).toEqual([round.id])
+    expect(await getRounds({ childId: 'child-other' })).toEqual([])
+    expect(await getRounds({ activityId: PRACTICE_TRICKY_WORDS.id })).toEqual([])
   })
 })
 
 describe('settings', () => {
-  it('defaults to standard text, the standard font, word audio on, and the note prompt off', async () => {
-    expect(await getSettings(CHILD_ID)).toEqual({
-      textSize: 'standard',
-      font: 'standard',
-      wordAudio: 'on',
-      explanations: 'off',
-    })
-  })
-
   it('merges and persists saved settings', async () => {
-    expect(await saveSettings(CHILD_ID, { textSize: 'large' })).toEqual({
+    expect(await saveSettings(CHILD_ID, { textSize: 'large', explanations: 'on' })).toEqual({
       ...DEFAULT_SETTINGS,
       textSize: 'large',
-    })
-    expect(await saveSettings(CHILD_ID, { font: 'dyslexic', explanations: 'on' })).toEqual({
-      ...DEFAULT_SETTINGS,
-      textSize: 'large',
-      font: 'dyslexic',
       explanations: 'on',
     })
-    const stored = await ChildProfile.findById(CHILD_ID).lean()
-    expect(stored.settings).toEqual({
-      textSize: 'large',
-      font: 'dyslexic',
-      wordAudio: 'on',
-      explanations: 'on',
-    })
-    expect(await saveSettings(CHILD_ID, {})).toEqual(await getSettings(CHILD_ID))
+    expect((await getChild(CHILD_ID)).settings.textSize).toBe('large')
   })
 
   it('ignores invalid values and unknown keys', async () => {
-    await saveSettings(CHILD_ID, { textSize: 'large', font: 'dyslexic' })
-    const after = await saveSettings(CHILD_ID, {
-      textSize: 'huge',
-      font: 'comic',
-      wordAudio: 'loud',
-      explanations: 'maybe',
-      name: 'Bob',
-    })
-    expect(after).toEqual({ ...DEFAULT_SETTINGS, textSize: 'large', font: 'dyslexic' })
-    expect((await getChildProfile(CHILD_ID)).name).toBe('Alex')
-    expect(await saveSettings(CHILD_ID, 'garbage')).toEqual(after)
+    const after = await saveSettings(CHILD_ID, { textSize: 'huge', font: 'comic', name: 'Bob' })
+    expect(after).toEqual(DEFAULT_SETTINGS)
+    expect((await getChild(CHILD_ID)).name).toBe('Alex')
+    expect(await saveSettings(CHILD_ID, 'garbage')).toEqual(DEFAULT_SETTINGS)
   })
 
   it('fills in defaults for profiles saved before newer settings existed', async () => {
-    await ChildProfile.collection.updateOne(
-      { _id: CHILD_ID },
-      { $set: { settings: { textSize: 'large' } } },
-    )
-    expect(await getSettings(CHILD_ID)).toEqual({ ...DEFAULT_SETTINGS, textSize: 'large' })
+    await ChildProfile.collection.updateOne({ _id: CHILD_ID }, { $set: { settings: { textSize: 'large' } } })
+    expect((await getChild(CHILD_ID)).settings).toEqual({ ...DEFAULT_SETTINGS, textSize: 'large' })
   })
 
   it('returns null for an unknown child', async () => {
-    expect(await getSettings('child-nobody')).toBeNull()
     expect(await saveSettings('child-nobody', { textSize: 'large' })).toBeNull()
   })
 })
 
 describe('resetDemoData', () => {
-  it('removes real rounds, restores seed rounds exactly, and keeps settings', async () => {
-    await saveSettings(CHILD_ID, { textSize: 'large', font: 'dyslexic' })
-    await saveRound(makeRound({ id: 'round-x' }))
-    await saveRound(makeCompletedRound({ id: 'round-y' }))
-
+  it('removes real rounds, restores seed rounds exactly, and keeps settings and words', async () => {
+    await saveSettings(CHILD_ID, { textSize: 'large' })
+    await start()
     await resetDemoData()
-
     expect(await getRounds()).toEqual([...SEED_ROUNDS].reverse())
-    expect(await getRound('round-x')).toBeNull()
-    expect(await inProgress()).toBeNull()
-    expect(await getChildProfile(CHILD_ID)).toEqual({ id: CHILD_ID, name: 'Alex' })
-    expect(await getSettings(CHILD_ID)).toEqual({
-      ...DEFAULT_SETTINGS,
-      textSize: 'large',
-      font: 'dyslexic',
-    })
+    expect((await getChild(CHILD_ID)).settings.textSize).toBe('large')
+    expect(await listWords()).toHaveLength(SEED_WORDS.length)
   })
 })
 
-describe('grown-up checks', () => {
-  it('signs in with admin / admin, ignoring spaces around the username only', async () => {
-    expect(await signIn('admin', 'admin')).not.toBeNull()
-    expect(await signIn('  admin ', 'admin')).not.toBeNull()
-    expect(await signIn('admin', ' admin')).toBeNull()
+describe('sessions', () => {
+  it('signs in with admin / admin and finds the session by its token', async () => {
+    const { token, view } = await signIn(' admin ', 'admin')
+    expect(view).toEqual({
+      adult: { username: 'admin', role: 'parent' },
+      children: [{ id: CHILD_ID, name: 'Alex' }],
+      elevated: false,
+    })
+    const auth = await findSession(token)
+    expect(auth.adult.username).toBe('admin')
+    expect(canAccessChild(auth, CHILD_ID)).toBe(true)
+    expect(canAccessChild(auth, 'child-other')).toBe(false)
+    expect(canAccessChild(auth, undefined)).toBe(false)
   })
 
-  it('rejects wrong, empty, or missing values', async () => {
-    expect(await signIn('admin', 'wrong')).toBeNull()
-    expect(await signIn('Admin', 'admin')).toBeNull()
-    expect(await signIn('', '')).toBeNull()
-    expect(await signIn(undefined, undefined)).toBeNull()
-    expect(await signIn({ $ne: null }, 'admin')).toBeNull()
+  it('stores only a hash of the session token', async () => {
+    const { token } = await signIn('admin', 'admin')
+    const [stored] = await Session.find().lean()
+    expect(stored._id).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(stored)).not.toContain(token)
   })
 
-  it('accepts only the password of a grown-up linked to the child', async () => {
-    expect(await checkParentPassword(CHILD_ID, 'admin')).toBe(true)
-    expect(await checkParentPassword(CHILD_ID, ' admin')).toBe(false)
-    expect(await checkParentPassword(CHILD_ID, '')).toBe(false)
-    expect(await checkParentPassword(CHILD_ID, undefined)).toBe(false)
-    expect(await checkParentPassword('child-other', 'admin')).toBe(false)
-    expect(await checkParentPassword(undefined, 'admin')).toBe(false)
-    expect(await checkParentPassword({ $ne: null }, 'admin')).toBe(false)
+  it('rejects wrong, empty, or missing credentials', async () => {
+    const wrong = [
+      ['admin', 'wrong'],
+      ['Admin', 'admin'],
+      ['admin', ' admin'],
+      ['', ''],
+      [undefined, undefined],
+      [{ $ne: null }, 'admin'],
+    ]
+    for (const [username, password] of wrong) {
+      await expect(signIn(username, password)).rejects.toMatchObject({ status: 401 })
+    }
+    expect(await Session.countDocuments()).toBe(0)
+  })
+
+  it('locks a username out after five wrong passwords', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await expect(signIn('admin', 'nope')).rejects.toMatchObject({ status: 401 })
+    }
+    await expect(signIn('admin', 'admin')).rejects.toMatchObject({ status: 429 })
+  })
+
+  it('finds nothing for unknown, expired, or signed-out tokens', async () => {
+    expect(await findSession('nope')).toBeNull()
+    expect(await findSession(undefined)).toBeNull()
+    const { token } = await signIn('admin', 'admin')
+    await Session.updateMany({}, { expiresAt: new Date(Date.now() - 1000) })
+    expect(await findSession(token)).toBeNull()
+
+    const second = await signIn('admin', 'admin')
+    await signOut(await findSession(second.token))
+    expect(await findSession(second.token)).toBeNull()
+  })
+
+  it('unlocks grown-up actions with the password, for a limited time, until locked', async () => {
+    const { token } = await signIn('admin', 'admin')
+    const auth = await findSession(token)
+    expect(isElevated(auth)).toBe(false)
+    await expect(unlock(auth, 'wrong')).rejects.toMatchObject({ status: 401 })
+    expect((await unlock(auth, 'admin')).elevated).toBe(true)
+
+    const reloaded = await findSession(token)
+    expect(isElevated(reloaded)).toBe(true)
+    const left = reloaded.session.elevatedUntil - Date.now()
+    expect(left).toBeGreaterThan(ELEVATED_MS - 5000)
+    expect(left).toBeLessThanOrEqual(ELEVATED_MS)
+
+    expect((await lock(reloaded)).elevated).toBe(false)
+    expect(isElevated(await findSession(token))).toBe(false)
   })
 })

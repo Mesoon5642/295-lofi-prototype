@@ -3,7 +3,7 @@ import { useId, useRef, useState } from 'react'
 // Password form for grown-ups. With `withUsername` it asks for a username and
 // password (sign in); without, just the parent/teacher password (unlock).
 // `check(username, password)` asks the server and resolves true or false; it rejects
-// when the server can't be reached. `firstFieldRef` is attached to the first input
+// with an ApiError otherwise (429 after too many tries, 0 when the server can't be reached). `firstFieldRef` is attached to the first input
 // so the dialog can focus it.
 export default function CredentialsForm({
   withUsername = false,
@@ -28,10 +28,14 @@ export default function CredentialsForm({
     let ok = false
     try {
       ok = await check(username, password)
-    } catch {
+    } catch (problem) {
       setChecking(false)
       setFailedAttempts((count) => count + 1)
-      setError('We couldn’t reach the game server. Please try again.')
+      setError(
+        problem?.status === 429
+          ? 'Too many tries. Please wait a few minutes, then try again.'
+          : 'We couldn’t reach the game server. Please try again.',
+      )
       return
     }
     setChecking(false)

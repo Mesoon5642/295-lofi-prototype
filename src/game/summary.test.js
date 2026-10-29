@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SEED_WORDS } from '../../server/seed/words.js'
 import { MATCH_THE_WORD } from '../content/activities.js'
 import { createRng } from './random.js'
 import { getCurrentQuestion, roundReducer, startRound } from './round.js'
@@ -10,6 +11,7 @@ function playRound({ id, seed, startedAt, completedAt, plan = {} }) {
     id,
     childId: 'child-alex',
     activity: MATCH_THE_WORD,
+    items: SEED_WORDS,
     now: startedAt,
     rng: createRng(seed),
   })
@@ -126,6 +128,7 @@ describe('recentPracticeWords', () => {
       id: 'r4',
       childId: 'child-alex',
       activity: MATCH_THE_WORD,
+      items: SEED_WORDS,
       now: day(4),
       rng: createRng(4),
     }),

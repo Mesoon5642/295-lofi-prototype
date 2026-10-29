@@ -10,7 +10,6 @@ import { MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../content/activities.js'
 // One game: picture, title, description with a Hear button, and Start / Keep going.
 function GameCard({
   activity,
-  pictureId,
   note,
   hasRoundInProgress,
   onStart,
@@ -20,7 +19,7 @@ function GameCard({
   const titleId = `${activity.id}-title`
   return (
     <section className="activity-card" aria-labelledby={titleId}>
-      <Picture pictureId={pictureId} decorative className="activity-card__picture" />
+      <Picture pictureId={activity.pictureId} decorative className="activity-card__picture" />
       <h2 id={titleId} className="activity-card__title">
         {activity.title}
       </h2>
@@ -89,7 +88,6 @@ export default function ChooseActivityScreen({
         <div className="activity-cards">
           <GameCard
             activity={MATCH_THE_WORD}
-            pictureId="cat"
             hasRoundInProgress={inProgress[MATCH_THE_WORD.id]}
             onStart={() => onStart(MATCH_THE_WORD.id)}
             starting={starting}
@@ -98,7 +96,6 @@ export default function ChooseActivityScreen({
           {showPractice && (
             <GameCard
               activity={PRACTICE_TRICKY_WORDS}
-              pictureId="dog"
               note={
                 !inProgress[PRACTICE_TRICKY_WORDS.id] &&
                 `${practiceCount} ${practiceCount === 1 ? 'word' : 'words'} to practice`

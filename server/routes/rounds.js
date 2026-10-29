@@ -1,32 +1,30 @@
 import { Router } from 'express'
-import { getRound, getRounds, saveRound } from '../repository.js'
-import { badRequest, notFound } from './errors.js'
+import { requireSession } from '../auth/middleware.js'
+import { canAccessChild } from '../auth/sessions.js'
+import { applyRoundAction, getRound } from '../repository.js'
+import { notFound } from './errors.js'
 
 export const roundsRouter = Router()
 
-const FILTERS = ['childId', 'status', 'activityId']
+roundsRouter.use(requireSession)
 
-// GET /api/rounds?childId=&status=&activityId= (all optional), newest first.
-roundsRouter.get('/', async (req, res) => {
-  const filter = {}
-  for (const key of FILTERS) {
-    const value = req.query[key]
-    if (value === undefined) continue
-    if (typeof value !== 'string') throw badRequest(`${key} must be a single value`)
-    filter[key] = value
-  }
-  res.json(await getRounds(filter))
+// Loads the round into req.round, 404ing if it's missing or belongs to another
+// grown-up's child.
+async function loadRound(req, _res, next) {
+  const round = await getRound(req.params.roundId)
+  if (!round || !canAccessChild(req.auth, round.childId)) throw notFound('No round with that id')
+  req.round = round
+  next()
+}
+
+roundsRouter.get('/:roundId', loadRound, (req, res) => {
+  res.json(req.round)
 })
 
-roundsRouter.get('/:roundId', async (req, res) => {
-  const round = await getRound(req.params.roundId)
+// Body: one game action, e.g. { type: 'SELECT', word: 'cat' } (see ARCHITECTURE.md).
+// Responds with the round after the action.
+roundsRouter.post('/:roundId/actions', loadRound, async (req, res) => {
+  const round = await applyRoundAction(req.params.roundId, req.body)
   if (!round) throw notFound('No round with that id')
   res.json(round)
-})
-
-// Upsert. A round that is already completed is never changed; the stored copy is returned.
-roundsRouter.put('/:roundId', async (req, res) => {
-  const round = req.body
-  if (round?.id !== req.params.roundId) throw badRequest('The round id must match the URL')
-  res.json(await saveRound(round))
 })

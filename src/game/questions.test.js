@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { MATCH_THE_WORD } from '../content/activities.js'
+import { SEED_WORDS } from '../../server/seed/words.js'
 import { generateQuestions } from './questions.js'
 import { createRng } from './random.js'
 
-const ITEMS = MATCH_THE_WORD.items
+const ITEMS = SEED_WORDS
 const WORDS = ITEMS.map((item) => item.word)
 const SEEDS = Array.from({ length: 300 }, (_, i) => i)
 

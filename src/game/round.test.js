@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SEED_WORDS } from '../../server/seed/words.js'
 import { MATCH_THE_WORD } from '../content/activities.js'
 import { generateQuestions } from './questions.js'
 import { createRng } from './random.js'
@@ -20,6 +21,7 @@ function newRound(seed = 1) {
     id: `round-${seed}`,
     childId: 'child-alex',
     activity: MATCH_THE_WORD,
+    items: SEED_WORDS,
     now: START,
     rng: createRng(seed),
   })
@@ -76,7 +78,7 @@ describe('createRound / startRound', () => {
   })
 
   it('startRound is deterministic for a seed and matches createRound(generateQuestions)', () => {
-    const questions = generateQuestions(MATCH_THE_WORD.items, { rng: createRng(8), count: 5 })
+    const questions = generateQuestions(SEED_WORDS, { rng: createRng(8), count: 5 })
     const manual = createRound({
       id: 'round-8',
       childId: 'child-alex',
@@ -88,7 +90,7 @@ describe('createRound / startRound', () => {
   })
 
   it('does not share option arrays with the generated questions', () => {
-    const questions = generateQuestions(MATCH_THE_WORD.items, { rng: createRng(2) })
+    const questions = generateQuestions(SEED_WORDS, { rng: createRng(2) })
     const round = createRound({ id: 'r', childId: 'c', activityId: 'a', questions, now: START })
     expect(round.questions[0].options).not.toBe(questions[0].options)
     expect(round.questions[0].options).toEqual(questions[0].options)

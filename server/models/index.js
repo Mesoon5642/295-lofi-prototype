@@ -1,3 +1,6 @@
 export { Adult } from './Adult.js'
 export { ChildProfile } from './ChildProfile.js'
+export { Image } from './Image.js'
 export { Round } from './Round.js'
+export { Session } from './Session.js'
+export { Word } from './Word.js'

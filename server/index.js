@@ -6,9 +6,10 @@ import { seedIfEmpty } from './seed/seed.js'
 const port = Number(process.env.PORT ?? 3001)
 const clientOrigins = process.env.CLIENT_ORIGIN?.split(',').map((origin) => origin.trim())
 
-const { embedded } = await connectDatabase()
-console.log(embedded ? 'MongoDB: embedded, saved in .data/mongo' : 'MongoDB: connected to MONGODB_URI')
-if (await seedIfEmpty()) console.log('MongoDB: wrote demo data')
+const { embedded, dbPath } = await connectDatabase()
+console.log(embedded ? `MongoDB: embedded, saved in ${dbPath}` : 'MongoDB: connected to MONGODB_URI')
+const seeded = await seedIfEmpty()
+if (seeded.length > 0) console.log(`MongoDB: wrote demo data (${seeded.join('; ')})`)
 
 const server = createApp({ clientOrigins }).listen(port, () => {
   console.log(`API listening on http://localhost:${port}`)

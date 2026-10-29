@@ -16,8 +16,9 @@ export function describeActivity(activity) {
   return `${activity.title}. ${activity.description}`
 }
 
-// Every phrase the app can speak for these activities, with no duplicates (by clip name).
-export function spokenPhrases(activities) {
+// Every phrase the app can speak for these activities and words ([{ word }]), with no
+// duplicates (by clip name).
+export function spokenPhrases(activities, words) {
   const phrases = new Map()
   const add = (text) => {
     const name = clipName(text)
@@ -26,7 +27,7 @@ export function spokenPhrases(activities) {
   for (const activity of activities) {
     add(describeActivity(activity))
     add(activity.instruction)
-    for (const item of activity.items) add(item.word)
   }
+  for (const { word } of words) add(word)
   return [...phrases].map(([name, text]) => ({ name, text }))
 }

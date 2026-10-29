@@ -1,5 +1,5 @@
-import { useContext, useEffect, useId, useReducer, useRef, useState } from 'react'
-import { saveRound } from '../api/progress.js'
+import { useCallback, useContext, useEffect, useId, useReducer, useRef, useState } from 'react'
+import { sendRoundAction } from '../api/progress.js'
 import { getAudioSupport, playClip } from '../audio/player.js'
 import ExplanationForm from '../components/ExplanationForm.jsx'
 import Icon from '../components/Icon.jsx'
@@ -35,7 +35,7 @@ function Feedback({ kind, attempts }) {
 }
 
 export default function ActivityScreen({ initialRound, onBack, onComplete, focusHeading }) {
-  const [round, dispatch] = useReducer(roundReducer, initialRound)
+  const [round, applyLocally] = useReducer(roundReducer, initialRound)
   const [audioAvailable] = useState(() => getAudioSupport() === 'available')
   const [saveFailed, setSaveFailed] = useState(false)
   const { settings } = useContext(SettingsContext)
@@ -52,14 +52,20 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
   const shownIndex = useRef(round.currentIndex)
   const wasPaused = useRef(round.paused)
 
-  // Save after every change so a refresh keeps the child's progress. Saves are sent
-  // in order by the API module.
-  useEffect(() => {
-    saveRound(round).then(
-      () => setSaveFailed(false),
-      () => setSaveFailed(true),
-    )
-  }, [round])
+  // Each action shows right away (the same reducer runs here) and is sent to the
+  // server, which applies it to the stored round, so a refresh keeps the child's
+  // progress. The API module sends actions in order.
+  const roundId = initialRound.id
+  const dispatch = useCallback(
+    (action) => {
+      applyLocally(action)
+      sendRoundAction(roundId, action).then(
+        () => setSaveFailed(false),
+        () => setSaveFailed(true),
+      )
+    },
+    [roundId],
+  )
 
   useEffect(() => {
     if (round.status === 'completed') onComplete(round)

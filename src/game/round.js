@@ -27,15 +27,17 @@ export function createRound({ id, childId, activityId, questions, now }) {
   }
 }
 
+// `items` is the word list to draw from: [{ word, pictureId, hint }].
 export function startRound({
   id,
   childId,
   activity,
+  items,
   now = new Date().toISOString(),
   rng = Math.random,
   targets,
 }) {
-  const questions = generateQuestions(activity.items, {
+  const questions = generateQuestions(items, {
     rng,
     count: activity.questionCount,
     targets,

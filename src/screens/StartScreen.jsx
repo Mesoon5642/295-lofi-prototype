@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import ScreenHeading from '../components/ScreenHeading.jsx'
-import SignInDialog from '../components/SignInDialog.jsx'
+import UnlockDialog from '../components/UnlockDialog.jsx'
 import TopBar from '../components/TopBar.jsx'
 
 export default function StartScreen({ childName, onPlay, onParent, focusHeading }) {
@@ -22,7 +22,7 @@ export default function StartScreen({ childName, onPlay, onParent, focusHeading 
           </button>
         </div>
       </main>
-      {signingIn && <SignInDialog onSignIn={onParent} onClose={() => setSigningIn(false)} />}
+      {signingIn && <UnlockDialog onUnlock={onParent} onClose={() => setSigningIn(false)} />}
     </>
   )
 }

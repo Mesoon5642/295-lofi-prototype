@@ -24,7 +24,7 @@ export async function connectDatabase({ uri = process.env.MONGODB_URI, persist =
     target = embedded.getUri()
   }
   await mongoose.connect(target, { dbName: uri ? undefined : 'reading-game' })
-  return { uri: target, embedded: embedded !== null }
+  return { uri: target, embedded: embedded !== null, dbPath: embedded?.instanceInfo?.dbPath ?? null }
 }
 
 export async function disconnectDatabase() {

@@ -140,9 +140,34 @@ function ResetDemo({ onReset }) {
   )
 }
 
+function DeviceSignIn({ username, onSignOut }) {
+  return (
+    <section className="panel panel--quiet" aria-labelledby="device-title">
+      <h2 id="device-title" className="panel__title">
+        This device
+      </h2>
+      <p>
+        Signed in as <strong>{username}</strong>. Children can play here until a grown-up signs out.
+      </p>
+      <button type="button" className="btn btn--secondary" onClick={onSignOut}>
+        <Icon name="back" />
+        <span>Sign out</span>
+      </button>
+    </section>
+  )
+}
+
 // `rounds`: the child's completed rounds, newest first. `onReset` resets the demo data
-// on the server and reloads the rounds.
-export default function ParentScreen({ child, rounds, onReset, onBack, focusHeading }) {
+// on the server and reloads the rounds. `onSignOut` signs this device out.
+export default function ParentScreen({
+  child,
+  username,
+  rounds,
+  onReset,
+  onSignOut,
+  onBack,
+  focusHeading,
+}) {
   const [openId, setOpenId] = useState(null)
   const [status, setStatus] = useState('')
   const openRound = openId ? rounds.find((r) => r.id === openId) : null
@@ -152,8 +177,12 @@ export default function ParentScreen({ child, rounds, onReset, onBack, focusHead
       await onReset()
       setOpenId(null)
       setStatus('Demo data was reset.')
-    } catch {
-      setStatus('Could not reset the demo data. Check that the game server is running.')
+    } catch (error) {
+      setStatus(
+        error?.status === 403
+          ? 'Grown-up access timed out. Go Back and open Parent or Teacher again.'
+          : 'Could not reset the demo data. Check that the game server is running.',
+      )
     }
   }
 
@@ -184,6 +213,7 @@ export default function ParentScreen({ child, rounds, onReset, onBack, focusHead
             <PracticeWords rounds={rounds} />
             <RoundList rounds={rounds} onOpen={setOpenId} />
             <ResetDemo onReset={handleReset} />
+            <DeviceSignIn username={username} onSignOut={onSignOut} />
           </>
         )}
       </main>

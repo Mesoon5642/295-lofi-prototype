@@ -1,20 +1,55 @@
 import { Router } from 'express'
-import { checkParentPassword, signIn } from '../repository.js'
+import { requireSession } from '../auth/middleware.js'
+import {
+  SESSION_COOKIE,
+  SESSION_MS,
+  describeSession,
+  findSession,
+  lock,
+  signIn,
+  signOut,
+  unlock,
+} from '../auth/sessions.js'
 
 export const authRouter = Router()
 
-// Placeholder grown-up checks: they answer yes/no and do not start a session yet.
-
-authRouter.post('/sign-in', async (req, res) => {
-  const adult = await signIn(req.body?.username, req.body?.password)
-  if (!adult) {
-    res.status(401).json({ error: 'That username or password is not right.' })
-    return
+// HTTP-only so page scripts can't read it; SameSite=Lax so other sites can't send it.
+// Secure (HTTPS only) when NODE_ENV=production or COOKIE_SECURE=true.
+function cookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true',
+    path: '/api',
   }
-  res.json({ username: adult.username, role: adult.role, childIds: adult.childIds })
+}
+
+// Body: { username, password }. Sets the session cookie; responds with the session.
+// Signing in again on the same device replaces its old session.
+authRouter.post('/sign-in', async (req, res) => {
+  const { token, view } = await signIn(req.body?.username, req.body?.password)
+  const previous = await findSession(req.cookies?.[SESSION_COOKIE])
+  if (previous) await signOut(previous)
+  res.cookie(SESSION_COOKIE, token, { ...cookieOptions(), maxAge: SESSION_MS })
+  res.json(view)
 })
 
-authRouter.post('/check-password', async (req, res) => {
-  const ok = await checkParentPassword(req.body?.childId, req.body?.password)
-  res.status(ok ? 200 : 401).json({ ok })
+// The current session: { adult, children, elevated }, or 401 when signed out.
+authRouter.get('/session', requireSession, async (req, res) => {
+  res.json(await describeSession(req.auth))
+})
+
+authRouter.post('/sign-out', requireSession, async (req, res) => {
+  await signOut(req.auth)
+  res.clearCookie(SESSION_COOKIE, cookieOptions())
+  res.json({ ok: true })
+})
+
+// Body: { password }. Unlocks grown-up actions for a few minutes.
+authRouter.post('/unlock', requireSession, async (req, res) => {
+  res.json(await unlock(req.auth, req.body?.password))
+})
+
+authRouter.post('/lock', requireSession, async (req, res) => {
+  res.json(await lock(req.auth))
 })

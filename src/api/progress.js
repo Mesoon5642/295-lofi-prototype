@@ -1,21 +1,19 @@
-// Child profile, settings, and rounds, through the Express API. These keep the names
-// the localStorage repository had, but are async. Screens use only this module and
-// api/auth.js to reach the server.
+// The child, their settings, and rounds, through the Express API. Rounds are created
+// and changed on the server; the browser sends game actions and shows the result.
+// Screens use only this module and api/auth.js to reach the server.
 
 import { ApiError, createQueue, request } from './http.js'
 
 const path = (strings, ...values) =>
   strings.reduce((out, s, i) => out + s + (i < values.length ? encodeURIComponent(values[i]) : ''), '')
 
-export function getChildProfile(childId) {
+// { id, name, settings }
+export function getChild(childId) {
   return request(path`/api/children/${childId}`)
 }
 
-export function getSettings(childId) {
-  return request(path`/api/children/${childId}/settings`)
-}
-
-// Partial update; resolves with the full saved settings. Sent in order, like round saves.
+// Grown-ups only (needs an unlocked session). Partial update; resolves with the full
+// saved settings. Sent in order, like round actions.
 const settingsQueue = createQueue()
 
 export function saveSettings(childId, partial) {
@@ -24,30 +22,14 @@ export function saveSettings(childId, partial) {
   )
 }
 
-let idCounter = 0
-
-export function createRoundId() {
-  const cryptoApi = globalThis.crypto
-  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
-    return `round-${cryptoApi.randomUUID()}`
-  }
-  idCounter += 1
-  return `round-${Date.now().toString(36)}-${idCounter}`
+// { trickyWords: string[], inProgress: { [activityId]: roundId | null } }
+export function getGames(childId) {
+  return request(path`/api/children/${childId}/games`)
 }
 
-// Saves go out one at a time, in order, so an older copy of a round can never land
-// after a newer one.
-const roundQueue = createQueue()
-
-export function saveRound(round) {
-  return roundQueue.run(() =>
-    request(path`/api/rounds/${round.id}`, { method: 'PUT', body: round }),
-  )
-}
-
-// Resolves once every round save started so far has finished (whether or not it worked).
-export function whenSaved() {
-  return roundQueue.idle()
+// The server starts a round (or returns the game's in-progress one) and resolves with it.
+export function startRound(childId, activityId) {
+  return request(path`/api/children/${childId}/rounds`, { method: 'POST', body: { activityId } })
 }
 
 export async function getRound(id) {
@@ -59,20 +41,27 @@ export async function getRound(id) {
   }
 }
 
-// Newest first. Every filter is optional.
-export function getRounds({ childId, status, activityId } = {}) {
-  const query = new URLSearchParams(
-    Object.entries({ childId, status, activityId }).filter(([, value]) => value !== undefined),
+// Game actions go out one at a time, in order, so the server applies them in the
+// order the child made them. Resolves with the round after the action.
+const actionQueue = createQueue()
+
+export function sendRoundAction(roundId, action) {
+  return actionQueue.run(() =>
+    request(path`/api/rounds/${roundId}/actions`, { method: 'POST', body: action }),
   )
-  const search = query.size > 0 ? `?${query}` : ''
-  return request(`/api/rounds${search}`)
 }
 
-export async function getInProgressRound(childId, activityId) {
-  const [latest] = await getRounds({ childId, activityId, status: 'in_progress' })
-  return latest ?? null
+// Resolves once every action sent so far has finished (whether or not it worked).
+export function whenSaved() {
+  return actionQueue.idle()
 }
 
+// Grown-ups only: the child's completed rounds, newest first.
+export function getCompletedRounds(childId) {
+  return request(path`/api/children/${childId}/rounds?status=completed`)
+}
+
+// Grown-ups only.
 export function resetDemoData() {
   return request('/api/demo/reset', { method: 'POST' })
 }

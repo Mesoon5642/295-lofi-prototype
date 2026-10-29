@@ -17,6 +17,7 @@
     "audio:generate": "node server/scripts/generateAudio.js"
   },
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "howler": "^2.2.4",

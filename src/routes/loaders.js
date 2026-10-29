@@ -1,41 +1,35 @@
 // Route loaders: fetch from the Express API before a screen shows. Loaders that read
-// rounds wait for pending round saves first, so they never see an older copy.
+// rounds wait for pending game actions first, so they never see an older copy.
 import { redirect } from 'react-router'
-import { ACTIVE_CHILD_ID } from '../api/config.js'
-import {
-  getChildProfile,
-  getInProgressRound,
-  getRound,
-  getRounds,
-  getSettings,
-  whenSaved,
-} from '../api/progress.js'
-import { getTrickyWords } from '../api/rounds.js'
-import { hasParentSession } from '../auth/parentSession.js'
-import { MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../content/activities.js'
+import { loadSession } from '../api/auth.js'
+import { ApiError } from '../api/http.js'
+import { getChild, getCompletedRounds, getGames, getRound, whenSaved } from '../api/progress.js'
 
+// The child who plays on this device: the signed-in grown-up's first child, until
+// there is a way to pick one.
+async function activeChildId() {
+  const session = await loadSession()
+  return session?.children[0]?.id ?? null
+}
+
+// Signed out → the sign-in screen. Otherwise { session, child } (child is null when
+// the grown-up has no children linked yet).
 export async function rootLoader() {
-  const [child, settings] = await Promise.all([
-    getChildProfile(ACTIVE_CHILD_ID),
-    getSettings(ACTIVE_CHILD_ID),
-  ])
-  return { child, settings }
+  const session = await loadSession()
+  if (!session) return redirect('/sign-in')
+  const childId = session.children[0]?.id
+  return { session, child: childId ? await getChild(childId) : null }
+}
+
+export async function signInLoader() {
+  return (await loadSession()) ? redirect('/') : null
 }
 
 export async function chooseLoader() {
   await whenSaved()
-  const [practiceWords, matchRound, practiceRound] = await Promise.all([
-    getTrickyWords(ACTIVE_CHILD_ID),
-    getInProgressRound(ACTIVE_CHILD_ID, MATCH_THE_WORD.id),
-    getInProgressRound(ACTIVE_CHILD_ID, PRACTICE_TRICKY_WORDS.id),
-  ])
-  return {
-    practiceWords,
-    inProgressIds: {
-      [MATCH_THE_WORD.id]: matchRound?.id ?? null,
-      [PRACTICE_TRICKY_WORDS.id]: practiceRound?.id ?? null,
-    },
-  }
+  const childId = await activeChildId()
+  if (!childId) return redirect('/')
+  return getGames(childId)
 }
 
 export async function playLoader({ params }) {
@@ -54,8 +48,15 @@ export async function summaryLoader({ params }) {
   return { round }
 }
 
+// Only after the grown-up re-entered their password (the server answers 403 otherwise).
 export async function parentLoader() {
-  if (!hasParentSession()) return redirect('/')
   await whenSaved()
-  return { rounds: await getRounds({ childId: ACTIVE_CHILD_ID, status: 'completed' }) }
+  const childId = await activeChildId()
+  if (!childId) return redirect('/')
+  try {
+    return { rounds: await getCompletedRounds(childId) }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) return redirect('/')
+    throw error
+  }
 }

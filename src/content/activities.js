@@ -1,32 +1,26 @@
-// Activity content: pure data, no logic. Shared by the React app and the server
-// (seed data and audio clip generation). Pictures are inline SVGs in the app, so the
-// word list lives here in code rather than in the database.
+// Activity content: pure data, no logic. Shared by the React app and the server.
+// The words and pictures each round uses live in MongoDB (the `words` and `images`
+// collections); this file only describes the games themselves.
 
 export const MATCH_THE_WORD = {
   id: 'match-the-word',
   title: 'Match the Word',
   instruction: 'Pick the word that matches the picture.',
   description: 'Look at the picture, then pick the word that matches it.',
+  // Image shown on the game's card (an id in the `images` collection).
+  pictureId: 'cat',
   questionCount: 5,
-  // pictureId keys into the inline SVG set in components/Picture.jsx.
-  items: [
-    { word: 'cat', pictureId: 'cat', hint: 'Look at the first letter. This word starts with c.' },
-    { word: 'sun', pictureId: 'sun', hint: 'Look at the first letter. This word starts with s.' },
-    { word: 'dog', pictureId: 'dog', hint: 'Look at the first letter. This word starts with d.' },
-    { word: 'hat', pictureId: 'hat', hint: 'Look at the first letter. This word starts with h.' },
-    { word: 'bus', pictureId: 'bus', hint: 'Look at the first letter. This word starts with b.' },
-  ],
 }
 
 // A custom Match the Word round built only from words that took more than one try
-// in recent rounds. Distractors still come from the full word set.
+// in recent rounds. Distractors still come from the full word list.
 export const PRACTICE_TRICKY_WORDS = {
   id: 'practice-tricky-words',
   title: 'Tricky Words',
   instruction: MATCH_THE_WORD.instruction,
   description: 'Practice the words that were tricky last time.',
+  pictureId: 'dog',
   questionCount: MATCH_THE_WORD.questionCount,
-  items: MATCH_THE_WORD.items,
 }
 
 export const ACTIVITIES = [MATCH_THE_WORD, PRACTICE_TRICKY_WORDS]

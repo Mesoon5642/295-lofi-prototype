@@ -31,7 +31,9 @@ npm run dev
 | React app (Vite) | http://localhost:5173 | Open this one. |
 | Express API | http://localhost:3001 | Restarts on server file changes (`node --watch`). |
 
-On first start the API writes the demo data into the database: child profile **Alex**, the grown-up account **`admin` / `admin`**, and three sample rounds. After that, data persists between restarts in `.data/mongo/` (git-ignored).
+On first start the API writes the demo data into the database: the word list and its pictures, child profile **Alex**, the grown-up account **`admin` / `admin`**, and three sample rounds. After that, data persists between restarts in `.data/mongo/` (git-ignored).
+
+Open http://localhost:5173 and **sign in as `admin` / `admin`**. A grown-up signs in once per browser, then the child plays. The sign-in lasts 30 days or until someone signs out from the parent/teacher view.
 
 To run the two halves separately (e.g. in two terminals): `npm run dev:server` and `npm run dev:web`.
 
@@ -61,16 +63,22 @@ Copy `.env.example` to `.env` and change what you need. The API reads it through
 | `MONGODB_URI` | *(unset → embedded MongoDB)* | A local install (`mongodb://localhost:27017/reading-game`) or a MongoDB Atlas connection string |
 | `MONGODB_DATA_DIR` | `.data/mongo` | Where the embedded MongoDB keeps its files |
 | `VITE_API_URL` | `http://localhost:3001` | Where the React app finds the API |
+| `COOKIE_SECURE` | `false` (`true` when `NODE_ENV=production`) | Send the session cookie over HTTPS only |
 
 If you change `PORT`, change `VITE_API_URL` to match. If you serve the React app from a different port, add that origin to `CLIENT_ORIGIN`.
+
+**Keep the app and the API on the same site.** The session cookie is `SameSite=Lax`, so the browser only sends it when the React app and the API share a site: `localhost` on any ports counts. If you deploy them on different domains, put them under one domain (e.g. `app.example.com` and `api.example.com`) or serve the API from the same origin.
 
 ### Database
 
 Mongoose schemas are in `server/models/`. Collections:
 
 - `childProfiles`: a child's name plus their reading settings
-- `adults`: parent/teacher accounts. Passwords are stored only as scrypt hashes.
-- `rounds`: every round played, including each answer chosen
+- `adults`: parent/teacher accounts and which children they can see. Passwords are stored only as scrypt hashes.
+- `sessions`: signed-in browsers. Only a hash of each cookie token is stored, and MongoDB deletes expired sessions automatically.
+- `words`: the word list (word, hint, picture). New rounds draw from it.
+- `images`: the pictures, stored as bytes (SVG, PNG, JPEG, or WebP; up to 1 MB each) and served at `/api/images/<id>`
+- `rounds`: every round played, including each answer chosen. The server creates rounds and applies each game action.
 
 Looking at the data:
 - With `MONGODB_URI` set, use MongoDB Compass or `mongosh` as usual.
@@ -80,13 +88,16 @@ Resetting:
 - **Reset Demo Data** (in the parent/teacher view) or `POST /api/demo/reset` removes all rounds and restores the sample rounds. Settings are kept.
 - `npm run db:seed` wipes everything, settings and accounts included, and writes the demo data again. **Stop the API first** when using the embedded database, because only one process can open `.data/mongo` at a time.
 - To start completely fresh, stop the API and delete `.data/`.
+- On every start the API fills in any collection that is empty (images, words, or profiles and accounts). An older database therefore picks up the word list and pictures without losing its rounds.
+
+Adding words: there is no word editor yet. Until parent/child management lands, either add them to `server/seed/words.js` (with an SVG in `server/seed/images/`) and run `npm run db:seed`, or insert into the `words` and `images` collections directly. A word needs a matching speech clip (see below).
 
 ### Audio clips
 
 Howler.js plays audio files, not text, so every spoken phrase is a pre-generated `.wav` in `server/audio/`, served by the API at `/audio/<name>.wav`:
 - Each file is named after its text (`clipName` in `src/audio/clips.js`). For example, "Pick the word that matches the picture." becomes `pick-the-word-that-matches-the-picture.wav`.
 - The committed clips use the Windows built-in voice as a placeholder. To use a real recording, save it over the file with the same name. No code change is needed.
-- **After adding or changing words, instructions, or game descriptions** in `src/content/activities.js`, run `npm run audio:generate` on Windows, or add the new clips by hand on macOS/Linux. A test (`server/app.test.js`) fails if any phrase is missing a clip.
+- **After adding or changing words** (`server/seed/words.js`) **or instructions/game descriptions** (`src/content/activities.js`), run `npm run audio:generate` on Windows, or add the new clips by hand on macOS/Linux. A test (`server/app.test.js`) fails if any seed phrase is missing a clip. Words added straight to the database need a clip added by hand, otherwise their Hear button logs a "Could not load" warning.
 
 ### Troubleshooting
 
@@ -95,6 +106,8 @@ Howler.js plays audio files, not text, so every spoken phrase is a pre-generated
 - **Embedded MongoDB won't start:** another API or `db:seed` process still has `.data/mongo` open. Stop it (or end any stray `mongod` process), then try again.
 - **Hear buttons do nothing:** open the browser console. A "Could not load the … clip" warning means the clip file is missing or the API isn't reachable.
 - **CORS errors in the console:** the page's origin isn't in `CLIENT_ORIGIN`.
+- **Stuck on the sign-in screen, or "Please sign in again":** the session cookie isn't being sent. Check that the app and the API are on the same site (see Configuration), and that `COOKIE_SECURE` isn't `true` on plain `http://`. `npm run db:seed` also signs everyone out.
+- **"Too many tries":** five wrong passwords for one username (or one unlock) locks it for 15 minutes. Restarting the API clears this.
 
 ## Structure
 
@@ -105,17 +118,20 @@ src/                 React app
   screens/, components/  React UI
   api/                 the ONLY browser code that talks to the API (fetch)
   audio/               Howler.js clip player + clip naming
-  content/             activity words, hints, feedback text, settings options. Pure data,
+  content/             game titles/instructions, feedback text, settings options. Pure data,
                        shared with the server.
-  game/                pure game logic: question generation, round reducer, summaries
+  game/                pure game logic: question generation, round reducer, summaries.
+                       The server runs it to create rounds and apply actions; the browser
+                       runs the reducer too so taps show instantly.
 server/              Express API
   app.js               routes, CORS, static audio, error handling
   index.js             starts the API (connect DB → seed if empty → listen)
   db.js                MONGODB_URI or embedded MongoDB
   models/              Mongoose schemas
-  repository.js        all database reads and writes
-  routes/              /api/children, /api/rounds, /api/auth, /api/demo
-  seed/                demo data and seeding
+  repository.js        child, word, image, and round reads and writes
+  auth/                sessions, password hashing, auth middleware
+  routes/              /api/auth, /api/children, /api/rounds, /api/words, /api/images, /api/demo
+  seed/                demo data, seed word list, and seed pictures (images/*.svg)
   scripts/             db:seed, audio:generate
   audio/               speech clips (.wav)
 ```
@@ -124,9 +140,11 @@ The API endpoints, data shapes, and module contracts are in [docs/ARCHITECTURE.m
 
 ## Demo scenarios
 
+0. **Sign in:** open the app → sign in as `admin` / `admin` (a wrong password shows an error).
 1. **Independent practice:** Play → Match the Word → Start → answer all five → "You finished 5 words!"
 2. **Using support:** choose a wrong word ("Let's try again") → Help (shows the first-letter hint) → a word's Hear button → choose the right word → Pause / Continue → Next. (The "Tell us how you chose" note is off by default; turn on **Ask how they chose** in Settings to try it.)
-3. **Adult review:** Home → Parent or Teacher (top-left of the top bar) → sign in with `admin` / `admin` → open the newest round → check attempts, help and audio use, and the note → refresh the page (you'll need to sign in again) and confirm the round is still listed once.
+3. **Adult review:** Home → Parent or Teacher (top-left of the top bar) → enter the password `admin` → open the newest round → check attempts, help and audio use, and the note. Refresh the page: the round is still listed once. Go Back and the password is asked again next time.
+6. **Sign out:** Parent or Teacher → This device → Sign out. The app returns to the sign-in screen.
 4. **Tricky words:** Play → on the **Tricky Words** card press Hear to hear what it is → Start. The round only uses words that took more than one try in recent rounds.
 5. **Resume:** start a round, answer two words, refresh the page. The round reloads from the database where you left off.
 

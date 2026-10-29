@@ -4,5 +4,7 @@ export const API_BASE = (import.meta.env?.VITE_API_URL ?? 'http://localhost:3001
 // Speech clips are served by the API at /audio/<clip name>.wav.
 export const AUDIO_BASE = `${API_BASE}/audio`
 
-// The child who plays on this device, until there is a way to pick a child.
-export const ACTIVE_CHILD_ID = 'child-alex'
+// Pictures are stored in MongoDB and served at /api/images/<pictureId>.
+export function imageUrl(pictureId) {
+  return `${API_BASE}/api/images/${encodeURIComponent(pictureId)}`
+}

@@ -4,6 +4,7 @@ import {
   parentLoader,
   playLoader,
   rootLoader,
+  signInLoader,
   summaryLoader,
 } from './routes/loaders.js'
 import {
@@ -13,17 +14,26 @@ import {
   LoadingScreen,
   ParentRoute,
   PlayRoute,
+  SignInRoute,
   StartRoute,
   SummaryRoute,
 } from './routes/routeComponents.jsx'
 
 // Routes:
+//   /sign-in            grown-up sign-in for this device (when signed out)
 //   /                   Start
 //   /games              Choose a game
 //   /play/:roundId      a round in progress
 //   /summary/:roundId   a finished round
-//   /parent             parent/teacher view (only right after signing in)
+//   /parent             parent/teacher view (only after re-entering the password)
 export const router = createBrowserRouter([
+  {
+    path: '/sign-in',
+    loader: signInLoader,
+    Component: SignInRoute,
+    ErrorBoundary: ErrorScreen,
+    HydrateFallback: LoadingScreen,
+  },
   {
     id: 'root',
     path: '/',

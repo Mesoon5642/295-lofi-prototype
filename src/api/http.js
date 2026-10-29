@@ -9,14 +9,18 @@ export class ApiError extends Error {
   }
 }
 
-// JSON request to the Express API. Resolves with the parsed body; rejects with ApiError.
+// JSON request to the Express API, sending the session cookie. Writes always carry a
+// JSON body (the API refuses other writes, which blocks cross-site form posts).
+// Resolves with the parsed body; rejects with ApiError.
 export async function request(path, { method = 'GET', body, base = API_BASE } = {}) {
+  const write = method !== 'GET' && method !== 'HEAD'
   let response
   try {
     response = await fetch(`${base}${path}`, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'include',
+      headers: write ? { 'Content-Type': 'application/json' } : undefined,
+      body: write ? JSON.stringify(body ?? {}) : undefined,
     })
   } catch {
     throw new ApiError(0, 'Could not reach the game server')

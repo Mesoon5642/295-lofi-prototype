@@ -1,10 +1,12 @@
 // Seed data written to MongoDB on first run (and by Reset Demo Data / npm run db:seed):
 // child profile Alex, one grown-up account, and a few completed sample rounds.
+// The word list and pictures are in ./words.js.
 // Sample rounds are clearly marked (isSample: true, ids prefixed 'sample-')
 // and use past dates so real rounds always sort ahead of them.
 
 import { MATCH_THE_WORD } from '../../src/content/activities.js'
 import { DEFAULT_SETTINGS } from '../../src/content/settings.js'
+import { SEED_WORDS } from './words.js'
 
 export const SEED_CHILD = { id: 'child-alex', name: 'Alex', settings: DEFAULT_SETTINGS }
 
@@ -14,7 +16,7 @@ export const SEED_ADULTS = [
 ]
 
 // Hints come straight from the activity content so they never drift.
-const HINTS = Object.fromEntries(MATCH_THE_WORD.items.map((item) => [item.word, item.hint]))
+const HINTS = Object.fromEntries(SEED_WORDS.map((item) => [item.word, item.hint]))
 
 export const SEED_ROUNDS = [
   {
