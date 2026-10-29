@@ -1,5 +1,3 @@
-import { useContext } from 'react'
-import { SettingsContext } from './settingsContext.js'
 import ToggleGroup from './ToggleGroup.jsx'
 
 const TEXT_SIZES = [
@@ -23,10 +21,10 @@ const EXPLANATIONS = [
   { value: 'on', label: 'On' },
 ]
 
-// Text size, font, word audio, and the "Tell us how you chose" prompt for the child's screens. Only grown-ups see this: in the
-// parent/teacher view and in the password-protected settings dialog.
-export default function ReadingSettings() {
-  const { settings, updateSettings } = useContext(SettingsContext)
+// Text size, font, word audio, and the "Tell us how you chose" prompt for one child's
+// screens. Only grown-ups see this: in the parent/teacher view and in the
+// password-protected settings dialog. `onChange(partial)` saves a change.
+export default function ReadingSettings({ settings, onChange: updateSettings }) {
   return (
     <div className="reading-settings">
       <div className="setting-row">

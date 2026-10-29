@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import RoundDetail from '../components/RoundDetail.jsx'
 import SampleBadge from '../components/SampleBadge.jsx'
@@ -9,14 +9,14 @@ import { formatDate } from '../components/formatDate.js'
 import { PRACTICE_TRICKY_WORDS } from '../content/activities.js'
 import { recentPracticeWords, summarizeRound } from '../game/index.js'
 
-function ReadingSettingsPanel({ childName }) {
+function ReadingSettingsPanel({ childName, settings, onChange }) {
   return (
     <section className="panel" aria-labelledby="settings-title">
       <h2 id="settings-title" className="panel__title">
         Reading settings
       </h2>
       <p className="panel__note">Changes how {childName}&rsquo;s reading screens look.</p>
-      <ReadingSettings />
+      <ReadingSettings settings={settings} onChange={onChange} />
     </section>
   )
 }
@@ -86,105 +86,11 @@ function RoundList({ rounds, onOpen }) {
   )
 }
 
-function ResetDemo({ onReset }) {
-  const [confirming, setConfirming] = useState(false)
-  const [resetting, setResetting] = useState(false)
-  const confirmRef = useRef(null)
-  const startRef = useRef(null)
-  const wasConfirming = useRef(false)
-
-  useEffect(() => {
-    if (confirming) confirmRef.current?.focus()
-    else if (wasConfirming.current) startRef.current?.focus()
-    wasConfirming.current = confirming
-  }, [confirming])
-
-  async function handleConfirm() {
-    if (resetting) return
-    setResetting(true)
-    await onReset()
-    setResetting(false)
-    setConfirming(false)
-  }
-
-  return (
-    <section className="panel panel--quiet" aria-labelledby="reset-title">
-      <h2 id="reset-title" className="panel__title">
-        Demo data
-      </h2>
-      {confirming ? (
-        <div className="confirm" role="group" aria-label="Confirm reset">
-          <p>Reset demo data? This removes rounds played here and restores the sample rounds.</p>
-          <div className="button-row">
-            <button
-              ref={confirmRef}
-              type="button"
-              className="btn btn--danger"
-              onClick={handleConfirm}
-              aria-disabled={resetting || undefined}
-            >
-              {resetting ? 'Resetting…' : 'Yes, reset'}
-            </button>
-            <button type="button" className="btn btn--secondary" onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button ref={startRef} type="button" className="btn btn--secondary" onClick={() => setConfirming(true)}>
-          <Icon name="trash" />
-          <span>Reset Demo Data</span>
-        </button>
-      )}
-    </section>
-  )
-}
-
-function DeviceSignIn({ username, onSignOut }) {
-  return (
-    <section className="panel panel--quiet" aria-labelledby="device-title">
-      <h2 id="device-title" className="panel__title">
-        This device
-      </h2>
-      <p>
-        Signed in as <strong>{username}</strong>. Children can play here until a grown-up signs out.
-      </p>
-      <button type="button" className="btn btn--secondary" onClick={onSignOut}>
-        <Icon name="back" />
-        <span>Sign out</span>
-      </button>
-    </section>
-  )
-}
-
-// `rounds`: the child's completed rounds, newest first. `onReset` resets the demo data
-// on the server and reloads the rounds. `onSignOut` signs this device out.
-export default function ParentScreen({
-  child,
-  username,
-  rounds,
-  onReset,
-  onSignOut,
-  onBack,
-  focusHeading,
-}) {
+// One child's results for the parent/teacher view. `rounds`: the child's completed
+// rounds, newest first. `settings` / `onSettingsChange`: the child's reading settings.
+export default function ParentScreen({ child, rounds, settings, onSettingsChange, onBack, focusHeading }) {
   const [openId, setOpenId] = useState(null)
-  const [status, setStatus] = useState('')
   const openRound = openId ? rounds.find((r) => r.id === openId) : null
-
-  async function handleReset() {
-    try {
-      await onReset()
-      setOpenId(null)
-      setStatus('Demo data was reset.')
-    } catch (error) {
-      setStatus(
-        error?.status === 403
-          ? 'Grown-up access timed out. Go Back and open Parent or Teacher again.'
-          : 'Could not reset the demo data. Check that the game server is running.',
-      )
-    }
-  }
 
   return (
     <>
@@ -206,14 +112,9 @@ export default function ParentScreen({
             <ScreenHeading key="list" focusOnMount={focusHeading}>
               {child.name}&rsquo;s reading
             </ScreenHeading>
-            <p className="status" role="status">
-              {status}
-            </p>
-            <ReadingSettingsPanel childName={child.name} />
+            <ReadingSettingsPanel childName={child.name} settings={settings} onChange={onSettingsChange} />
             <PracticeWords rounds={rounds} />
             <RoundList rounds={rounds} onOpen={setOpenId} />
-            <ResetDemo onReset={handleReset} />
-            <DeviceSignIn username={username} onSignOut={onSignOut} />
           </>
         )}
       </main>

@@ -346,6 +346,89 @@ input {
   margin-top: 12px;
 }
 
+/* Who's playing? */
+
+.player-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.player-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 150px;
+  padding: 20px 24px;
+  border: 3px solid #dfe3e8;
+  border-radius: 24px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.player-button:hover,
+.player-button:focus-visible {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.player-button[aria-disabled='true'] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.player-button__initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.player-button__name {
+  font-size: var(--fs-lead);
+  font-weight: 700;
+}
+
+.players-panel {
+  width: min(100%, 480px);
+  text-align: left;
+}
+
+.add-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
+.add-child .field {
+  flex: 1 1 200px;
+}
+
+.add-child__message {
+  flex-basis: 100%;
+  color: var(--color-muted);
+  font-size: var(--fs-small);
+}
+
+.add-child__message:empty {
+  display: none;
+}
+
 /* Grown-up sign in */
 
 .sign-in-card {

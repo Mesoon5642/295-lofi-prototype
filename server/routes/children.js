@@ -1,9 +1,28 @@
 import { Router } from 'express'
 import { requireChildAccess, requireElevated, requireSession } from '../auth/middleware.js'
-import { createRound, getChild, getGames, getRounds, saveSettings } from '../repository.js'
+import {
+  createChild,
+  createRound,
+  getChild,
+  getGames,
+  getRounds,
+  listChildren,
+  saveSettings,
+} from '../repository.js'
 import { badRequest, notFound } from './errors.js'
 
 export const childrenRouter = Router()
+
+// Grown-ups only: the signed-in grown-up's children with a summary of their results,
+// [{ id, name, completedRounds, lastPlayedAt }].
+childrenRouter.get('/', requireSession, requireElevated, async (req, res) => {
+  res.json(await listChildren(req.auth.adult.childIds))
+})
+
+// Grown-ups only. Body: { name }. Creates a child profile linked to this grown-up (201).
+childrenRouter.post('/', requireSession, requireElevated, async (req, res) => {
+  res.status(201).json(await createChild(req.auth.adult._id, req.body?.name))
+})
 
 childrenRouter.use('/:childId', requireSession, requireChildAccess)
 

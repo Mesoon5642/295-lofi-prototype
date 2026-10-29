@@ -1,11 +1,12 @@
 import { Router } from 'express'
-import { requireSession } from '../auth/middleware.js'
+import { requireElevated, requireSession } from '../auth/middleware.js'
 import {
   SESSION_COOKIE,
   SESSION_MS,
   describeSession,
   findSession,
   lock,
+  selectChild,
   signIn,
   signOut,
   unlock,
@@ -34,7 +35,7 @@ authRouter.post('/sign-in', async (req, res) => {
   res.json(view)
 })
 
-// The current session: { adult, children, elevated }, or 401 when signed out.
+// The current session: { adult, children, activeChildId, elevated }, or 401 when signed out.
 authRouter.get('/session', requireSession, async (req, res) => {
   res.json(await describeSession(req.auth))
 })
@@ -52,4 +53,10 @@ authRouter.post('/unlock', requireSession, async (req, res) => {
 
 authRouter.post('/lock', requireSession, async (req, res) => {
   res.json(await lock(req.auth))
+})
+
+// Grown-ups only. Body: { childId }. Sets who plays on this device and locks
+// grown-up actions again.
+authRouter.post('/active-child', requireSession, requireElevated, async (req, res) => {
+  res.json(await selectChild(req.auth, req.body?.childId))
 })

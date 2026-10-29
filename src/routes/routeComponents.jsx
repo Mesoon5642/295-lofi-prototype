@@ -5,33 +5,65 @@ import {
   Outlet,
   useLoaderData,
   useLocation,
-  useMatch,
   useNavigate,
   useNavigation,
   useRevalidator,
   useRouteError,
   useRouteLoaderData,
 } from 'react-router'
-import { lock, signOut } from '../api/auth.js'
+import { lock, selectChild, signOut } from '../api/auth.js'
 import { ApiError } from '../api/http.js'
-import { getChild, resetDemoData, saveSettings, startRound, whenSaved } from '../api/progress.js'
+import {
+  createChild,
+  getChild,
+  resetDemoData,
+  saveSettings,
+  startRound,
+  whenSaved,
+} from '../api/progress.js'
 import { SettingsContext } from '../components/settingsContext.js'
+import { DEFAULT_SETTINGS } from '../content/settings.js'
 import ActivityScreen from '../screens/ActivityScreen.jsx'
 import ChooseActivityScreen from '../screens/ChooseActivityScreen.jsx'
+import GrownUpGateScreen from '../screens/GrownUpGateScreen.jsx'
+import ParentHomeScreen from '../screens/ParentHomeScreen.jsx'
 import ParentScreen from '../screens/ParentScreen.jsx'
+import PlayersScreen from '../screens/PlayersScreen.jsx'
 import SignInScreen from '../screens/SignInScreen.jsx'
 import StartScreen from '../screens/StartScreen.jsx'
 import SummaryScreen from '../screens/SummaryScreen.jsx'
 
 const SERVER_TROUBLE = 'We couldn’t reach the game server. Please try again.'
+const STANDARD_LOOK = { textSize: 'standard', font: 'standard' }
 
 // Only move focus to headings after the first navigation, not on page load.
 function useFocusHeading() {
   return useLocation().key !== 'default'
 }
 
-// Asks the server to start a round of `activityId` (it returns the game's in-progress
-// round if there is one) and opens it. Called from event handlers only.
+function isGrownUpPath(pathname) {
+  return pathname.startsWith('/players') || pathname.startsWith('/parent')
+}
+
+// Saves a child's setting change, showing it right away; if saving fails, falls back
+// to what the server has.
+function useChildSettings(child) {
+  const [settings, setSettings] = useState(child?.settings ?? DEFAULT_SETTINGS)
+  const childId = child?.id ?? null
+  const updateSettings = useCallback(
+    (partial) => {
+      setSettings((current) => ({ ...current, ...partial }))
+      saveSettings(childId, partial)
+        .catch(() => getChild(childId).then((saved) => setSettings(saved.settings)))
+        .catch((error) => console.error('Could not save settings', error))
+    },
+    [childId],
+  )
+  return [settings, updateSettings]
+}
+
+// Asks the server to start a round of `activityId` for the child (it returns the
+// game's in-progress round if there is one) and opens it. Event handlers only.
 function useStartRound(childId) {
   const navigate = useNavigate()
   const [starting, setStarting] = useState(false)
@@ -53,77 +85,54 @@ function useStartRound(childId) {
   return { start, starting, error }
 }
 
-// Root layout: the session, the child, and their settings, shared by every screen.
+function useSignOut() {
+  const navigate = useNavigate()
+  return async () => {
+    await signOut()
+    navigate('/sign-in', { replace: true })
+  }
+}
 
-export function AppLayout() {
-  const { child } = useLoaderData()
-  const [settings, setSettings] = useState(child?.settings)
-  const navigation = useNavigation()
-  const inParentView = useMatch('/parent') !== null
-  const wasInParentView = useRef(inParentView)
+// Root layout
 
-  // Changes show right away; if saving fails, fall back to what the server has.
-  const childId = child?.id ?? null
-  const updateSettings = useCallback(
-    (partial) => {
-      setSettings((current) => ({ ...current, ...partial }))
-      saveSettings(childId, partial)
-        .catch(() => getChild(childId).then((saved) => setSettings(saved.settings)))
-        .catch((error) => console.error('Could not save settings', error))
-    },
-    [childId],
-  )
+// While a child screen is showing, the child's settings apply (text size, font, and
+// the SettingsContext the child screens read). Grown-up screens always look standard.
+function ChildLook({ child, busy }) {
+  const [settings, updateSettings] = useChildSettings(child)
   const settingsValue = useMemo(
-    () => ({ childId, settings, updateSettings }),
-    [childId, settings, updateSettings],
+    () => ({ childId: child?.id ?? null, settings, updateSettings }),
+    [child, settings, updateSettings],
   )
-
-  // The password is asked for every time: leaving the parent/teacher view locks
-  // grown-up actions again.
-  useEffect(() => {
-    if (wasInParentView.current && !inParentView) lock()
-    wasInParentView.current = inParentView
-  }, [inParentView])
-
-  if (!child) return <NoChildScreen />
-
-  // The settings are for the child's screens; the parent/teacher view always looks standard.
-  const look = inParentView ? { textSize: 'standard', font: 'standard' } : settings
-
+  const look = child ? settings : STANDARD_LOOK
   return (
     <SettingsContext value={settingsValue}>
-      <div
-        className="app"
-        data-text-size={look.textSize}
-        data-font={look.font}
-        aria-busy={navigation.state !== 'idle' || undefined}
-      >
+      <div className="app" data-text-size={look.textSize} data-font={look.font} aria-busy={busy || undefined}>
         <Outlet />
       </div>
     </SettingsContext>
   )
 }
 
-function NoChildScreen() {
-  const navigate = useNavigate()
-  return (
-    <div className="app">
-      <main className="screen screen--center">
-        <h1 className="screen-heading">No child to play yet</h1>
-        <p className="lead">This grown-up account isn’t linked to a child profile.</p>
-        <button
-          type="button"
-          className="btn btn--secondary btn--big"
-          onClick={async () => {
-            await signOut()
-            navigate('/sign-in')
-          }}
-        >
-          Sign out
-        </button>
-      </main>
-    </div>
-  )
+export function AppLayout() {
+  const child = useRouteLoaderData('child')?.child ?? null
+  const navigation = useNavigation()
+  const { pathname } = useLocation()
+  const inGrownUpArea = isGrownUpPath(pathname)
+  const wasInGrownUpArea = useRef(inGrownUpArea)
+
+  // The password is asked for every time: going from the grown-up screens back to the
+  // child's screens locks grown-up actions again.
+  useEffect(() => {
+    if (wasInGrownUpArea.current && !inGrownUpArea) lock()
+    wasInGrownUpArea.current = inGrownUpArea
+  }, [inGrownUpArea])
+
+  return <ChildLook key={child?.id ?? 'grown-up'} child={child} busy={navigation.state !== 'idle'} />
+}
+
+// Pathless layout around the child's screens; its loader finds the child playing.
+export function ChildLayout() {
+  return <Outlet />
 }
 
 export function ErrorScreen() {
@@ -167,22 +176,115 @@ export function LoadingScreen() {
   )
 }
 
-// Sign in (outside the root layout: no child yet)
+// Sign in (outside the root layout: no session yet)
 
 export function SignInRoute() {
   const navigate = useNavigate()
   const focusHeading = useFocusHeading()
   return (
     <div className="app">
-      <SignInScreen onSignIn={() => navigate('/', { replace: true })} focusHeading={focusHeading} />
+      <SignInScreen onSignIn={() => navigate('/players', { replace: true })} focusHeading={focusHeading} />
     </div>
   )
 }
 
-// Start
+// Grown-up screens: each shows the password gate when its unlock has timed out.
+
+function Gate({ session }) {
+  const revalidator = useRevalidator()
+  const focusHeading = useFocusHeading()
+  const handleSignOut = useSignOut()
+  return (
+    <GrownUpGateScreen
+      username={session.adult.username}
+      onUnlocked={() => revalidator.revalidate()}
+      onSignOut={handleSignOut}
+      focusHeading={focusHeading}
+    />
+  )
+}
+
+export function PlayersRoute() {
+  const { locked, session } = useLoaderData()
+  const navigate = useNavigate()
+  const revalidator = useRevalidator()
+  const focusHeading = useFocusHeading()
+  const handleSignOut = useSignOut()
+  if (locked) return <Gate session={session} />
+
+  return (
+    <PlayersScreen
+      profiles={session.children}
+      onPick={async (childId) => {
+        await selectChild(childId)
+        navigate('/')
+      }}
+      onAddChild={async (name) => {
+        await createChild(name)
+        await revalidator.revalidate()
+      }}
+      onParentView={() => navigate('/parent')}
+      onSignOut={handleSignOut}
+      focusHeading={focusHeading}
+    />
+  )
+}
+
+export function ParentHomeRoute() {
+  const data = useLoaderData()
+  const navigate = useNavigate()
+  const revalidator = useRevalidator()
+  const focusHeading = useFocusHeading()
+  const handleSignOut = useSignOut()
+  if (data.locked) return <Gate session={data.session} />
+
+  return (
+    <ParentHomeScreen
+      username={data.session.adult.username}
+      profiles={data.profiles}
+      onOpenChild={(childId) => navigate(`/parent/${childId}`)}
+      onAddChild={async (name) => {
+        await createChild(name)
+        await revalidator.revalidate()
+      }}
+      onChoosePlayer={() => navigate('/players')}
+      onReset={async () => {
+        await resetDemoData()
+        await revalidator.revalidate()
+      }}
+      onSignOut={handleSignOut}
+      onBack={() => navigate(data.session.activeChildId ? '/' : '/players')}
+      focusHeading={focusHeading}
+    />
+  )
+}
+
+function ParentChildResults({ child, rounds }) {
+  const navigate = useNavigate()
+  const focusHeading = useFocusHeading()
+  const [settings, updateSettings] = useChildSettings(child)
+  return (
+    <ParentScreen
+      child={child}
+      rounds={rounds}
+      settings={settings}
+      onSettingsChange={updateSettings}
+      onBack={() => navigate('/parent')}
+      focusHeading={focusHeading}
+    />
+  )
+}
+
+export function ParentChildRoute() {
+  const data = useLoaderData()
+  if (data.locked) return <Gate session={data.session} />
+  return <ParentChildResults key={data.child.id} child={data.child} rounds={data.rounds} />
+}
+
+// Child screens
 
 export function StartRoute() {
-  const { child } = useRouteLoaderData('root')
+  const { child } = useRouteLoaderData('child')
   const navigate = useNavigate()
   const focusHeading = useFocusHeading()
   return (
@@ -195,10 +297,8 @@ export function StartRoute() {
   )
 }
 
-// Choose a game
-
 export function ChooseRoute() {
-  const { child } = useRouteLoaderData('root')
+  const { child } = useRouteLoaderData('child')
   const { trickyWords, inProgress } = useLoaderData()
   const navigate = useNavigate()
   const focusHeading = useFocusHeading()
@@ -217,8 +317,6 @@ export function ChooseRoute() {
     />
   )
 }
-
-// Play
 
 export function PlayRoute() {
   const { round } = useLoaderData()
@@ -245,8 +343,6 @@ export function PlayRoute() {
   )
 }
 
-// Summary
-
 export function SummaryRoute() {
   const { round } = useLoaderData()
   const navigate = useNavigate()
@@ -259,38 +355,6 @@ export function SummaryRoute() {
       starting={starting}
       error={error}
       onHome={() => navigate('/')}
-      focusHeading={focusHeading}
-    />
-  )
-}
-
-// Parent/teacher view
-
-export function ParentRoute() {
-  const { child, session } = useRouteLoaderData('root')
-  const { rounds } = useLoaderData()
-  const navigate = useNavigate()
-  const revalidator = useRevalidator()
-  const focusHeading = useFocusHeading()
-
-  async function handleReset() {
-    await resetDemoData()
-    await revalidator.revalidate()
-  }
-
-  async function handleSignOut() {
-    await signOut()
-    navigate('/sign-in', { replace: true })
-  }
-
-  return (
-    <ParentScreen
-      child={child}
-      username={session.adult.username}
-      rounds={rounds}
-      onReset={handleReset}
-      onSignOut={handleSignOut}
-      onBack={() => navigate('/')}
       focusHeading={focusHeading}
     />
   )

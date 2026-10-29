@@ -1,6 +1,5 @@
 import { Router } from 'express'
-import { requireSession } from '../auth/middleware.js'
-import { canAccessChild } from '../auth/sessions.js'
+import { assertChildUsable, requireSession } from '../auth/middleware.js'
 import { applyRoundAction, getRound } from '../repository.js'
 import { notFound } from './errors.js'
 
@@ -8,11 +7,12 @@ export const roundsRouter = Router()
 
 roundsRouter.use(requireSession)
 
-// Loads the round into req.round, 404ing if it's missing or belongs to another
-// grown-up's child.
+// Loads the round into req.round: 404 if it's missing or another grown-up's child's,
+// 403 if it's for one of their children who isn't the one playing on this device.
 async function loadRound(req, _res, next) {
   const round = await getRound(req.params.roundId)
-  if (!round || !canAccessChild(req.auth, round.childId)) throw notFound('No round with that id')
+  if (!round) throw notFound('No round with that id')
+  assertChildUsable(req.auth, round.childId, 'No round with that id')
   req.round = round
   next()
 }

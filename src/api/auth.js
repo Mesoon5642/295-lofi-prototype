@@ -2,28 +2,22 @@
 // code never sees; these calls only report what the server says about it.
 import { ApiError, request } from './http.js'
 
-// The session is read once and shared by every loader until it changes.
-let sessionPromise = null
-
-// { adult: { username, role }, children: [{ id, name }], elevated }, or null when
-// signed out. Rejects with ApiError when the server can't be reached.
-export function loadSession() {
-  sessionPromise ??= request('/api/auth/session').catch((error) => {
-    sessionPromise = null
+// { adult: { username, role }, children: [{ id, name }], activeChildId, elevated }, or
+// null when signed out. Always asks the server, so `elevated` and `activeChildId` are
+// current. Rejects with ApiError when the server can't be reached.
+export async function loadSession() {
+  try {
+    return await request('/api/auth/session')
+  } catch (error) {
     if (error instanceof ApiError && error.status === 401) return null
     throw error
-  })
-  return sessionPromise
+  }
 }
 
-function forgetSession() {
-  sessionPromise = null
-}
-
-// Resolves true (signed in) or false (wrong username or password). Rejects with
-// ApiError for anything else, e.g. 429 after too many tries or 0 when offline.
+// Resolves true (signed in, and unlocked for a few minutes) or false (wrong username or
+// password). Rejects with ApiError for anything else, e.g. 429 after too many tries or
+// 0 when offline.
 export async function signIn(username, password) {
-  forgetSession()
   try {
     await request('/api/auth/sign-in', { method: 'POST', body: { username, password } })
     return true
@@ -34,7 +28,6 @@ export async function signIn(username, password) {
 }
 
 export async function signOut() {
-  forgetSession()
   await request('/api/auth/sign-out', { method: 'POST' }).catch((error) => {
     if (!(error instanceof ApiError && error.status === 401)) throw error
   })
@@ -52,7 +45,13 @@ export async function unlock(password) {
   }
 }
 
-// Ends the unlock early (leaving the parent/teacher view, closing Settings).
+// Ends the unlock early (leaving the grown-up screens, closing Settings).
 export function lock() {
   return request('/api/auth/lock', { method: 'POST' }).catch(() => {})
+}
+
+// Grown-ups only: sets which child plays on this device. The server locks grown-up
+// actions again, since the device is being handed to the child.
+export function selectChild(childId) {
+  return request('/api/auth/active-child', { method: 'POST', body: { childId } })
 }

@@ -394,7 +394,8 @@ describe('sessions', () => {
     expect(view).toEqual({
       adult: { username: 'admin', role: 'parent' },
       children: [{ id: CHILD_ID, name: 'Alex' }],
-      elevated: false,
+      activeChildId: null,
+      elevated: true,
     })
     const auth = await findSession(token)
     expect(auth.adult.username).toBe('admin')
@@ -444,8 +445,10 @@ describe('sessions', () => {
     expect(await findSession(second.token)).toBeNull()
   })
 
-  it('unlocks grown-up actions with the password, for a limited time, until locked', async () => {
+  it('starts unlocked, and re-unlocks with the password for a limited time', async () => {
     const { token } = await signIn('admin', 'admin')
+    expect(isElevated(await findSession(token))).toBe(true)
+    await lock(await findSession(token))
     const auth = await findSession(token)
     expect(isElevated(auth)).toBe(false)
     await expect(unlock(auth, 'wrong')).rejects.toMatchObject({ status: 401 })

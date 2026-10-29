@@ -16,12 +16,15 @@ const settingsSchema = new Schema(
   { _id: false, id: false },
 )
 
-// A child who plays the game. `_id` is a readable string such as 'child-alex'.
+// A child who plays the game. `_id` is a string such as 'child-alex' (seed) or
+// 'child-<uuid>' (created in the app). Which grown-ups can see the child is stored on
+// each Adult (`childIds`), so a child can have several parents or teachers.
 const childProfileSchema = new Schema(
   {
     _id: { type: String, required: true },
-    name: { type: String, required: true, trim: true, maxlength: 60 },
+    name: { type: String, required: true, trim: true, minlength: 1, maxlength: 60 },
     settings: { type: settingsSchema, default: () => ({}) },
+    createdAt: { type: Date, default: Date.now },
   },
   { toJSON },
 )

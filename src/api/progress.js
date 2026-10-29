@@ -7,7 +7,19 @@ import { ApiError, createQueue, request } from './http.js'
 const path = (strings, ...values) =>
   strings.reduce((out, s, i) => out + s + (i < values.length ? encodeURIComponent(values[i]) : ''), '')
 
-// { id, name, settings }
+// Grown-ups only: [{ id, name, completedRounds, lastPlayedAt }] for every child the
+// signed-in grown-up can see.
+export function listChildren() {
+  return request('/api/children')
+}
+
+// Grown-ups only: creates a child profile linked to the signed-in grown-up and
+// resolves with it ({ id, name, settings }).
+export function createChild(name) {
+  return request('/api/children', { method: 'POST', body: { name } })
+}
+
+// { id, name, settings }. A locked device can only read the child who is playing.
 export function getChild(childId) {
   return request(path`/api/children/${childId}`)
 }

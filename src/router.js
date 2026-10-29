@@ -1,19 +1,25 @@
 import { createBrowserRouter, redirect } from 'react-router'
 import {
+  childLoader,
   chooseLoader,
-  parentLoader,
+  parentChildLoader,
+  parentHomeLoader,
   playLoader,
+  playersLoader,
   rootLoader,
   signInLoader,
   summaryLoader,
 } from './routes/loaders.js'
 import {
   AppLayout,
+  ChildLayout,
   ChooseRoute,
   ErrorScreen,
   LoadingScreen,
-  ParentRoute,
+  ParentChildRoute,
+  ParentHomeRoute,
   PlayRoute,
+  PlayersRoute,
   SignInRoute,
   StartRoute,
   SummaryRoute,
@@ -21,11 +27,14 @@ import {
 
 // Routes:
 //   /sign-in            grown-up sign-in for this device (when signed out)
-//   /                   Start
+//   /players            Who's playing? (grown-up: pick a child, add one, or open the parent view)
+//   /parent             parent/teacher view: every child, add a child, switch player, sign out
+//   /parent/:childId    one child's results and reading settings
+//   /                   Start (for the child playing on this device)
 //   /games              Choose a game
 //   /play/:roundId      a round in progress
 //   /summary/:roundId   a finished round
-//   /parent             parent/teacher view (only after re-entering the password)
+// Grown-up screens ask for the password again when their unlock has timed out.
 export const router = createBrowserRouter([
   {
     path: '/sign-in',
@@ -42,11 +51,20 @@ export const router = createBrowserRouter([
     ErrorBoundary: ErrorScreen,
     HydrateFallback: LoadingScreen,
     children: [
-      { index: true, Component: StartRoute },
-      { path: 'games', loader: chooseLoader, Component: ChooseRoute },
-      { path: 'play/:roundId', loader: playLoader, Component: PlayRoute },
-      { path: 'summary/:roundId', loader: summaryLoader, Component: SummaryRoute },
-      { path: 'parent', loader: parentLoader, Component: ParentRoute },
+      { path: 'players', loader: playersLoader, Component: PlayersRoute },
+      { path: 'parent', loader: parentHomeLoader, Component: ParentHomeRoute },
+      { path: 'parent/:childId', loader: parentChildLoader, Component: ParentChildRoute },
+      {
+        id: 'child',
+        loader: childLoader,
+        Component: ChildLayout,
+        children: [
+          { index: true, Component: StartRoute },
+          { path: 'games', loader: chooseLoader, Component: ChooseRoute },
+          { path: 'play/:roundId', loader: playLoader, Component: PlayRoute },
+          { path: 'summary/:roundId', loader: summaryLoader, Component: SummaryRoute },
+        ],
+      },
       { path: '*', loader: () => redirect('/') },
     ],
   },

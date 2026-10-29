@@ -1,5 +1,5 @@
 import { HttpError } from '../routes/errors.js'
-import { SESSION_COOKIE, canAccessChild, findSession, isElevated } from './sessions.js'
+import { SESSION_COOKIE, canAccessChild, canUseChild, findSession, isElevated } from './sessions.js'
 
 // Loads the signed-in grown-up from the session cookie into req.auth, or 401s.
 export async function requireSession(req, _res, next) {
@@ -15,10 +15,17 @@ export function requireElevated(req, _res, next) {
   next()
 }
 
-// After requireSession: 404s (not 403, so ids aren't confirmed) unless the grown-up
-// is linked to the child in the URL.
+// Throws unless the session may use this child (see canUseChild): 404 when the grown-up
+// isn't linked to the child (so other ids aren't confirmed), 403 when it's one of their
+// children but the device is locked to a different child.
+export function assertChildUsable(auth, childId, notFoundMessage = 'No child with that id') {
+  if (!canAccessChild(auth, childId)) throw new HttpError(404, notFoundMessage)
+  if (!canUseChild(auth, childId)) throw new HttpError(403, 'Enter the grown-up password first.')
+}
+
+// After requireSession: checks the child in the URL with assertChildUsable.
 export function requireChildAccess(req, _res, next) {
-  if (!canAccessChild(req.auth, req.params.childId)) throw new HttpError(404, 'No child with that id')
+  assertChildUsable(req.auth, req.params.childId)
   next()
 }
 

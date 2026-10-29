@@ -7,7 +7,7 @@ import { ACTIVITIES, MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../src/conten
 import { DEFAULT_SETTINGS, SETTING_VALUES } from '../src/content/settings.js'
 import { OPTION_COUNT, recentPracticeWords, roundReducer, startRound } from '../src/game/index.js'
 import { withLock } from './locks.js'
-import { ChildProfile, Image, Round, Word } from './models/index.js'
+import { Adult, ChildProfile, Image, Round, Word } from './models/index.js'
 import { HttpError } from './routes/errors.js'
 import { SEED_ROUNDS } from './seed/seedData.js'
 
@@ -37,6 +37,42 @@ function newestFirst(a, b) {
 export async function getChild(childId) {
   const child = await ChildProfile.findById(childId)
   if (!child) return null
+  return { id: child.id, name: child.name, settings: { ...DEFAULT_SETTINGS, ...plain(child.settings) } }
+}
+
+// The children with these ids, by name, each with how many rounds they've finished
+// and when they last finished one: [{ id, name, completedRounds, lastPlayedAt }].
+export async function listChildren(childIds) {
+  const [children, stats] = await Promise.all([
+    ChildProfile.find({ _id: { $in: childIds } }).collation({ locale: 'en' }).sort({ name: 1 }),
+    Round.aggregate([
+      { $match: { childId: { $in: childIds }, status: 'completed' } },
+      { $group: { _id: '$childId', completedRounds: { $sum: 1 }, lastPlayedAt: { $max: '$completedAt' } } },
+    ]),
+  ])
+  const byChild = new Map(stats.map((stat) => [stat._id, stat]))
+  return children.map((child) => ({
+    id: child.id,
+    name: child.name,
+    completedRounds: byChild.get(child.id)?.completedRounds ?? 0,
+    lastPlayedAt: byChild.get(child.id)?.lastPlayedAt?.toISOString() ?? null,
+  }))
+}
+
+// Creates a child profile with default settings and links it to the grown-up who made
+// it. Names are trimmed; a grown-up can't have two children with the same name
+// (ignoring case), since the name is how they tell them apart.
+export async function createChild(adultId, name) {
+  if (typeof name !== 'string' || name.trim() === '') throw new HttpError(400, 'Please enter a name')
+  const trimmed = name.trim()
+  const adult = await Adult.findById(adultId)
+  if (!adult) throw new HttpError(404, 'No grown-up with that id')
+  const clash = await ChildProfile.findOne({ _id: { $in: adult.childIds }, name: trimmed })
+    .collation({ locale: 'en', strength: 2 })
+  if (clash) throw new HttpError(409, `There is already a child called ${clash.name}`)
+
+  const child = await ChildProfile.create({ _id: `child-${randomUUID()}`, name: trimmed })
+  await Adult.updateOne({ _id: adult._id }, { $addToSet: { childIds: child.id } })
   return { id: child.id, name: child.name, settings: { ...DEFAULT_SETTINGS, ...plain(child.settings) } }
 }
 
@@ -201,9 +237,13 @@ export async function applyRoundAction(roundId, input, { now = new Date() } = {}
   })
 }
 
-// Removes every round and restores the sample rounds. Profiles, accounts, words,
-// images, and settings are kept.
-export async function resetDemoData() {
-  await Round.deleteMany({})
-  await Round.insertMany(SEED_ROUNDS.map(({ id, ...round }) => ({ ...round, _id: id })))
+// Removes the rounds of the given children (every child when `childIds` is omitted) and
+// restores their sample rounds. Profiles, accounts, words, images, and settings are kept.
+export async function resetDemoData(childIds) {
+  const scope = childIds === undefined ? {} : { childId: { $in: childIds } }
+  await Round.deleteMany(scope)
+  const samples = SEED_ROUNDS.filter((round) => childIds === undefined || childIds.includes(round.childId))
+  if (samples.length > 0) {
+    await Round.insertMany(samples.map(({ id, ...round }) => ({ ...round, _id: id })))
+  }
 }

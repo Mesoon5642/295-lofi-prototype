@@ -33,7 +33,7 @@ npm run dev
 
 On first start the API writes the demo data into the database: the word list and its pictures, child profile **Alex**, the grown-up account **`admin` / `admin`**, and three sample rounds. After that, data persists between restarts in `.data/mongo/` (git-ignored).
 
-Open http://localhost:5173 and **sign in as `admin` / `admin`**. A grown-up signs in once per browser, then the child plays. The sign-in lasts 30 days or until someone signs out from the parent/teacher view.
+Open http://localhost:5173 and **sign in as `admin` / `admin`**. Next comes **Who's playing?**: pick a child to hand the device to them, add a child, or open the parent/teacher view. The sign-in lasts 30 days or until someone signs out. The chosen child keeps playing on that device until a grown-up switches player.
 
 To run the two halves separately (e.g. in two terminals): `npm run dev:server` and `npm run dev:web`.
 
@@ -73,9 +73,9 @@ If you change `PORT`, change `VITE_API_URL` to match. If you serve the React app
 
 Mongoose schemas are in `server/models/`. Collections:
 
-- `childProfiles`: a child's name plus their reading settings
+- `childProfiles`: a child's name plus their reading settings. Grown-ups create these in the app.
 - `adults`: parent/teacher accounts and which children they can see. Passwords are stored only as scrypt hashes.
-- `sessions`: signed-in browsers. Only a hash of each cookie token is stored, and MongoDB deletes expired sessions automatically.
+- `sessions`: signed-in browsers, including which child is playing on each one. Only a hash of each cookie token is stored, and MongoDB deletes expired sessions automatically.
 - `words`: the word list (word, hint, picture). New rounds draw from it.
 - `images`: the pictures, stored as bytes (SVG, PNG, JPEG, or WebP; up to 1 MB each) and served at `/api/images/<id>`
 - `rounds`: every round played, including each answer chosen. The server creates rounds and applies each game action.
@@ -85,7 +85,7 @@ Looking at the data:
 - The embedded database only runs while the API runs, on a random port. Its connection string isn't printed, so the easiest way to inspect it is to point `MONGODB_URI` at a real MongoDB instead.
 
 Resetting:
-- **Reset Demo Data** (in the parent/teacher view) or `POST /api/demo/reset` removes all rounds and restores the sample rounds. Settings are kept.
+- **Reset Demo Data** (in the parent/teacher view) or `POST /api/demo/reset` removes the rounds of the signed-in grown-up's children and restores the sample rounds. Child profiles and settings are kept, and other grown-ups' children aren't touched.
 - `npm run db:seed` wipes everything, settings and accounts included, and writes the demo data again. **Stop the API first** when using the embedded database, because only one process can open `.data/mongo` at a time.
 - To start completely fresh, stop the API and delete `.data/`.
 - On every start the API fills in any collection that is empty (images, words, or profiles and accounts). An older database therefore picks up the word list and pictures without losing its rounds.
@@ -140,12 +140,13 @@ The API endpoints, data shapes, and module contracts are in [docs/ARCHITECTURE.m
 
 ## Demo scenarios
 
-0. **Sign in:** open the app → sign in as `admin` / `admin` (a wrong password shows an error).
+0. **Sign in and pick a player:** open the app → sign in as `admin` / `admin` (a wrong password shows an error) → **Who's playing?** → add a child (e.g. "Sam") → pick **Alex**.
 1. **Independent practice:** Play → Match the Word → Start → answer all five → "You finished 5 words!"
 2. **Using support:** choose a wrong word ("Let's try again") → Help (shows the first-letter hint) → a word's Hear button → choose the right word → Pause / Continue → Next. (The "Tell us how you chose" note is off by default; turn on **Ask how they chose** in Settings to try it.)
-3. **Adult review:** Home → Parent or Teacher (top-left of the top bar) → enter the password `admin` → open the newest round → check attempts, help and audio use, and the note. Refresh the page: the round is still listed once. Go Back and the password is asked again next time.
-6. **Sign out:** Parent or Teacher → This device → Sign out. The app returns to the sign-in screen.
-4. **Tricky words:** Play → on the **Tricky Words** card press Hear to hear what it is → Start. The round only uses words that took more than one try in recent rounds.
-5. **Resume:** start a round, answer two words, refresh the page. The round reloads from the database where you left off.
+3. **Tricky words:** Play → on the **Tricky Words** card press Hear to hear what it is → Start. The round only uses words that took more than one try in Alex's recent rounds.
+4. **Resume:** start a round, answer two words, refresh the page. The round reloads from the database where you left off.
+5. **Adult review:** Home → Parent or Teacher (top-left of the top bar) → enter the password `admin` → the overview lists every child with their finished rounds → View results for Alex → open the newest round → check attempts, help and audio use, and the note. Go Back to the child's screens and the password is asked again next time.
+6. **Results per child:** in the parent/teacher view → Choose who's playing → pick Sam → play a round. Sam has no Tricky Words card yet, and Sam's round shows only under Sam's results.
+7. **Sign out:** parent/teacher view → This device → Sign out. The app returns to the sign-in screen.
 
-**Reset Demo Data** (in the adult view) removes real rounds and restores the three "Sample data" rounds.
+**Reset Demo Data** (in the parent/teacher view) removes your children's rounds and restores the three "Sample data" rounds.

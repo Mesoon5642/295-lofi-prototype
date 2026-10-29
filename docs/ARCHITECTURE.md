@@ -17,8 +17,10 @@ src/                         React app
     config.js                API_BASE (VITE_API_URL), AUDIO_BASE, imageUrl(pictureId)
     http.js                  request() (sends the cookie), ApiError, createQueue()
     auth.js                  loadSession, signIn, signOut, unlock, lock
-    progress.js              getChild, saveSettings, getGames, startRound, getRound,
-                             sendRoundAction, whenSaved, getCompletedRounds, resetDemoData
+    auth.js                  (also) selectChild
+    progress.js              listChildren, createChild, getChild, saveSettings, getGames,
+                             startRound, getRound, sendRoundAction, whenSaved,
+                             getCompletedRounds, resetDemoData
   audio/
     clips.js                 clipName, describeActivity, spokenPhrases (pure; shared with the server)
     player.js                getAudioSupport, createClipPlayer, playClip (Howler.js)
@@ -129,9 +131,9 @@ All time values are passed in (`now` = ISO string). Nothing reads `Date.now()` o
 
 Every model's JSON output drops `__v` and uses a string `id` instead of `_id` (Word uses `word`), so API responses match the shapes above.
 
-- **ChildProfile** (`childProfiles`): `_id: String` ('child-alex'), `name` (required, ≤ 60), `settings: { textSize, font, wordAudio, explanations }`. Each setting is an enum from `SETTING_VALUES`, defaulting to `DEFAULT_SETTINGS`.
+- **ChildProfile** (`childProfiles`): `_id: String` ('child-alex' for the seed, 'child-<uuid>' when made in the app), `name` (required, 1–60 after trimming), `settings: { textSize, font, wordAudio, explanations }`, `createdAt`. Each setting is an enum from `SETTING_VALUES`, defaulting to `DEFAULT_SETTINGS`. Who can see a child is stored on each Adult (`childIds`), not on the child, so several grown-ups can share one child (many-to-many).
 - **Adult** (`adults`): `username` (unique), `role` ('parent' | 'teacher'), `childIds: [String]` (the children this grown-up may see), `passwordHash`, `passwordSalt` (scrypt). The hash and salt are never included in JSON.
-- **Session** (`sessions`): `_id` = SHA-256 of the cookie token (the token itself is never stored), `adultId`, `createdAt`, `expiresAt` (TTL index: MongoDB deletes expired sessions), `elevatedUntil: Date | null`.
+- **Session** (`sessions`): `_id` = SHA-256 of the cookie token (the token itself is never stored), `adultId`, `createdAt`, `expiresAt` (TTL index: MongoDB deletes expired sessions), `elevatedUntil: Date | null`, `activeChildId: String | null` (the child playing on this device).
 - **Word** (`words`): `_id` = the word itself (lowercase letters, spaces, `'` or `-`), `hint` (≤ 200), `pictureId` (refs Image). JSON: `{ word, hint, pictureId }`.
 - **Image** (`images`): `_id` (lowercase letters, digits, `-`), `contentType` ('image/svg+xml' | 'image/png' | 'image/jpeg' | 'image/webp'), `data: Buffer` (1 byte–1 MB), `description` (for grown-ups only). JSON leaves out `data`.
 - **Round** (`rounds`): `_id: String` ('round-<uuid>', made by the server), `childId` (indexed, refs ChildProfile), `activityId` (enum of `ACTIVITIES` ids), `startedAt: Date`, `completedAt: Date | null`, `status` ('in_progress' | 'completed'), `isSample`, `currentIndex` (≥ 0), `paused`, `questions: [Question]` (at least one).
@@ -148,6 +150,8 @@ Seed data is written on first start, when there are no child profiles:
 All functions are async and return plain JSON-safe objects. They throw `HttpError` (400/409) for bad input, and Mongoose ValidationError when a result would break a schema.
 
 - `getChild(childId) => { id, name, settings } | null`. Missing settings keys get defaults.
+- `listChildren(childIds) => [{ id, name, completedRounds, lastPlayedAt }]`, sorted by name (case-insensitive). The counts come from one aggregation over completed rounds.
+- `createChild(adultId, name) => { id, name, settings }`: trims the name and links the new child to that grown-up (`$addToSet` on `childIds`). It throws 400 when the name is blank and 409 when the grown-up already has a child with that name (ignoring case).
 - `saveSettings(childId, partial) => settings | null`. Only known keys with allowed values are saved; anything else is ignored.
 - `listWords() => [{ word, hint, pictureId }]`, alphabetical. `getImage(id) => { contentType, data } | null`.
 - `getRound(id)`, `getRounds({ childId, status, activityId })`: the latter is newest first (by completedAt ?? startedAt).
@@ -162,13 +166,21 @@ All functions are async and return plain JSON-safe objects. They throw `HttpErro
   - Accepts only `SELECT { word }`, `USE_HINT`, `USE_AUDIO`, `SAVE_EXPLANATION { text }`, `SKIP_EXPLANATION`, `PAUSE`, `CONTINUE`, `NEXT`. Anything else, and any extra fields, are rejected or dropped. The server sets `NEXT`'s time itself.
   - Runs `roundReducer`, validates the result, and saves it, under `withLock('round:<id>')`.
   - A completed round never changes: the reducer ignores actions on it, and the save filters on `status != completed`.
-- `resetDemoData()`: removes all rounds and restores `SEED_ROUNDS`. Children, accounts, words, images, and settings are kept.
+- `resetDemoData(childIds?)`: removes the rounds of those children (all children when omitted) and restores their `SEED_ROUNDS`. Children, accounts, words, images, and settings are kept.
 
 ## Sign-in (server/auth/)
 
-- **Device sign-in.** A grown-up signs in once on a device (`POST /api/auth/sign-in`). The server creates a Session and sets cookie `rg_session`: a 32-byte random token, `HttpOnly`, `SameSite=Lax`, `Path=/api`, `Secure` in production, lasting 30 days. Signing in again on the same device replaces the old session. The child then plays under that session.
-- **Unlocking (elevated).** Grown-up-only endpoints (round history, settings changes, demo reset) also need the session unlocked: the signed-in grown-up re-enters their password (`POST /api/auth/unlock`). It lasts 10 minutes, or until `POST /api/auth/lock`. The app locks when you leave `/parent` or close the Settings dialog, so the password is asked every time.
-- **Child access.** Each grown-up only sees children in their `childIds`. Other children and their rounds answer 404, so ids aren't confirmed.
+- **Device sign-in.** A grown-up signs in once on a device (`POST /api/auth/sign-in`):
+  - The server creates a Session and sets cookie `rg_session`: a 32-byte random token, `HttpOnly`, `SameSite=Lax`, `Path=/api`, `Secure` in production, lasting 30 days.
+  - Signing in again on the same device replaces the old session.
+  - The new session starts **unlocked**, because the password was just entered.
+- **Who's playing.** The grown-up picks one of their children (`POST /api/auth/active-child`, unlocked only). This sets `activeChildId` and **locks** the session, since the device is being handed over. The child then plays under that session.
+- **Unlocking (elevated).** Grown-up-only endpoints also need the session unlocked: listing or adding children, picking the player, round history, settings changes, and demo reset. The signed-in grown-up re-enters their password (`POST /api/auth/unlock`). It lasts 10 minutes, or until `POST /api/auth/lock`. The app locks when you go from the grown-up screens back to a child's screens, or close the Settings dialog, so the password is asked every time.
+- **Child access** (`assertChildUsable`), for every child or round endpoint:
+  - 404 when the grown-up isn't linked to the child (so other ids aren't confirmed).
+  - 403 when it's one of their children but the session is locked and that child isn't `activeChildId`. So a child playing on a locked device can only reach their own games and rounds.
+  - When unlocked, any of the grown-up's children.
+- **Sharing.** Several grown-ups can hold the same child id in `childIds`, and they all see that child's results. There's no API yet for inviting another grown-up or setting access levels; that's the follow-up.
 - **Lockout.** Five wrong passwords for one username (sign-in) or one session (unlock) within 15 minutes give 429 until the window passes. This is in memory and resets on restart.
 - **CSRF.** Every `/api` write must be `Content-Type: application/json` (415 otherwise). Browsers can't send that cross-site without a CORS preflight, and CORS only allows `CLIENT_ORIGIN`.
 
@@ -176,16 +188,19 @@ All functions are async and return plain JSON-safe objects. They throw `HttpErro
 
 JSON in and out. Errors come back as `{ error }`: 400 for validation, cast, or malformed-JSON problems, 401 when signed out (or a wrong password), 403 when the session isn't unlocked, 404 for unknown or other people's resources, 409 for too few words, 415 for non-JSON writes, 429 when locked out, 500 otherwise.
 
-Access: **public**, **session** (signed in), or **unlocked** (signed in + password re-entered). Child routes also need the child in the grown-up's `childIds`.
+Access: **public**, **session** (signed in), or **unlocked** (signed in + password entered recently). `/api/children/:childId/*` and `/api/rounds/:roundId/*` also go through the child access rule above: a locked session only reaches its active child.
 
 | Method | Path | Access | Body | Response |
 | --- | --- | --- | --- | --- |
 | GET | `/api/health` | public | | `{ ok: true }` |
 | POST | `/api/auth/sign-in` | public | `{ username, password }` | session view; sets the cookie |
-| GET | `/api/auth/session` | session | | `{ adult: { username, role }, children: [{ id, name }], elevated }` |
+| GET | `/api/auth/session` | session | | `{ adult: { username, role }, children: [{ id, name }], activeChildId, elevated }` |
 | POST | `/api/auth/unlock` | session | `{ password }` | session view (`elevated: true`) |
 | POST | `/api/auth/lock` | session | | session view (`elevated: false`) |
 | POST | `/api/auth/sign-out` | session | | `{ ok: true }`; clears the cookie |
+| POST | `/api/auth/active-child` | unlocked | `{ childId }` | session view (`activeChildId` set, `elevated: false`) |
+| GET | `/api/children` | unlocked | | `[{ id, name, completedRounds, lastPlayedAt }]` |
+| POST | `/api/children` | unlocked | `{ name }` | 201 `{ id, name, settings }` |
 | GET | `/api/children/:childId` | session | | `{ id, name, settings }` |
 | PATCH | `/api/children/:childId/settings` | unlocked | partial settings | full settings |
 | GET | `/api/children/:childId/games` | session | | `{ trickyWords, inProgress }` |
@@ -200,7 +215,7 @@ Access: **public**, **session** (signed in), or **unlocked** (signed in + passwo
 
 **Known limits:**
 - Locks and lockout counters live in one process. Running several API processes needs a shared store (e.g. a revision field on rounds, and Mongo-backed failure counts).
-- There's no account or child management yet: no sign-up, no password change, no word or image upload.
+- Children can be created, but not renamed or removed yet. There's no sign-up, password change, sharing a child with another grown-up, or word and image upload.
 
 ## Browser API layer (src/api/)
 
@@ -222,13 +237,16 @@ Howler.js plays files, not text, so every spoken phrase has a pre-generated clip
 
 | Path | Loader | Screen |
 | --- | --- | --- |
-| `/sign-in` | session (signed in → redirect to `/`) | Grown-up sign in |
-| `/` (root layout) | session (signed out → `/sign-in`) + the grown-up's first child | AppLayout: SettingsContext, text size/font, `<Outlet />` |
+| `/sign-in` | session (signed in → `/players`) | Grown-up sign in (then → `/players`) |
+| `/` (root layout) | session (signed out → `/sign-in`) | AppLayout: applies the playing child's text size/font and SettingsContext on child screens, the standard look on grown-up screens |
+| `/players` | session (locked → password gate) | Who's playing? (pick, add a child, parent view, sign out) |
+| `/parent` | `listChildren` (403 → password gate) | Parent/teacher overview: children, add child, switch player, demo reset, sign out |
+| `/parent/:childId` | the child + completed rounds (403 → gate; 404 → `/parent`) | One child's reading settings, practice words, rounds |
+| (pathless `child` layout) | `activeChildId` (none → `/players`) + `getChild` | wraps the child screens below |
 | `/` (index) | | Start |
 | `/games` | `getGames` | Choose a game |
-| `/play/:roundId` | the round (completed → `/summary/:roundId`; missing → `/games`) | Activity |
+| `/play/:roundId` | the round (completed → `/summary/:roundId`; missing or another child's → `/games`) | Activity |
 | `/summary/:roundId` | the round (not completed → `/play/:roundId`) | Summary |
-| `/parent` | completed rounds (403 because not unlocked → `/`) | Parent/teacher view |
 | `*` | redirect to `/` | |
 
 The route ErrorBoundary shows one of three messages, each with a button:
@@ -246,6 +264,8 @@ The route ErrorBoundary shows one of three messages, each with a button:
 - Tricky Words (`PRACTICE_TRICKY_WORDS`) is a custom Match the Word round whose targets are the words from `recentPracticeWords` over the child's completed rounds (up to `questionCount`). Its card only appears when there are such words or a Tricky Words round is in progress. It resumes separately from Match the Word. If no tricky words remain when one starts, a regular Match the Word round starts instead. The parent view labels these rounds "Tricky Words".
 - Pictures are `<img src="/api/images/<pictureId>">`. Question pictures have `alt="Mystery picture"` (it doesn't reveal the answer); card and summary pictures are decorative (`alt=""`).
 - Help is in the top-right and Back is in the top-left of a shared top bar on every screen. On the child's screens the middle holds a Settings button.
-- Parent/teacher access: a "Parent or Teacher" button (same quiet style as Back and Help) sits in the top bar on the Start screen (where Back would be). It opens a password modal (`UnlockDialog`) that only its X button closes (backdrop clicks and Escape do nothing). The signed-in grown-up's password unlocks the session on the server (`POST /api/auth/unlock`). Leaving `/parent` locks it again, so the password is asked every time. The parent/teacher view also has a "This device" panel with Sign out.
+- Parent/teacher access: a "Parent or Teacher" button (same quiet style as Back and Help) sits in the top bar on the Start screen (where Back would be). It opens a password modal (`UnlockDialog`) that only its X button closes (backdrop clicks and Escape do nothing). The signed-in grown-up's password unlocks the session on the server (`POST /api/auth/unlock`) and opens `/parent`. Going back to the child's screens locks it again, so the password is asked every time. Grown-up screens whose unlock has timed out (or after a refresh) show `GrownUpGateScreen`, which asks for the password and then reloads the screen.
+- Who's playing? (`/players`) comes right after sign-in and is reachable from the parent/teacher view ("Choose who's playing"). Each child is a large button showing their initial and name. Picking one sets the device's player and opens Start. The parent/teacher view's Back returns to Start when a child is playing, otherwise to Who's playing?.
+- Reading settings belong to each child. `ReadingSettings` takes `settings` and `onChange` props: the Settings dialog edits the playing child (through SettingsContext), and `/parent/:childId` edits that child.
 - Reading settings (text size; font: Standard / OpenDyslexic; read words aloud: On / Off; ask how they chose: Off / On) are for the child's screens. With word audio off, the Hear button beside each answer word is hidden; Hear Instructions is always available. The "Tell us how you chose" prompt after a correct answer is off by default and only appears once a grown-up turns on "Ask how they chose". Settings are stored on the child's profile in MongoDB. They apply right away on screen and are then saved through the API. The settings are for the child, but children can't change them directly. Grown-ups change them in two places: the "Reading settings" panel in the parent/teacher view, or the top bar's Settings button, which opens a modal behind the signed-in grown-up's password (`unlock`) and applies changes live, mid-round. That modal closes the same way (X only), asks for the password every time, and locks the session again when it closes.
-- The parent/teacher view always uses standard text size and the standard font, and has no Settings button.
+- The grown-up screens (sign-in, Who's playing?, the parent/teacher view) always use standard text size and the standard font, and have no Settings button.
