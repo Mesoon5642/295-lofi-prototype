@@ -10,6 +10,7 @@ import {
   useRevalidator,
   useRouteError,
   useRouteLoaderData,
+  useSearchParams,
 } from 'react-router'
 import { lock, selectChild, signOut } from '../api/auth.js'
 import { ApiError } from '../api/http.js'
@@ -21,10 +22,21 @@ import {
   startRound,
   whenSaved,
 } from '../api/progress.js'
+import {
+  endTestSession,
+  getActiveTestSession,
+  logTestEvent,
+  newTesterReset,
+  sendTestSessionAction,
+  startTestSession,
+} from '../api/testing.js'
+import TaskCard from '../components/TaskCard.jsx'
 import { SettingsContext } from '../components/settingsContext.js'
 import { DEFAULT_SETTINGS } from '../content/settings.js'
+import { deriveSignals, getCurrentTask } from '../game/index.js'
 import ActivityScreen from '../screens/ActivityScreen.jsx'
 import ChooseActivityScreen from '../screens/ChooseActivityScreen.jsx'
+import FacilitatorScreen from '../screens/FacilitatorScreen.jsx'
 import GrownUpGateScreen from '../screens/GrownUpGateScreen.jsx'
 import ParentHomeScreen from '../screens/ParentHomeScreen.jsx'
 import ParentScreen from '../screens/ParentScreen.jsx'
@@ -42,16 +54,21 @@ function useFocusHeading() {
 }
 
 function isGrownUpPath(pathname) {
-  return pathname.startsWith('/players') || pathname.startsWith('/parent')
+  return (
+    pathname.startsWith('/players') ||
+    pathname.startsWith('/parent') ||
+    pathname.startsWith('/facilitator')
+  )
 }
 
 // Saves a child's setting change, showing it right away; if saving fails, falls back
-// to what the server has.
+// to what the server has. Choosing large text is a usability test signal.
 function useChildSettings(child) {
   const [settings, setSettings] = useState(child?.settings ?? DEFAULT_SETTINGS)
   const childId = child?.id ?? null
   const updateSettings = useCallback(
     (partial) => {
+      if (partial.textSize === 'large') logTestEvent({ type: 'signal', signal: 'text-size-large' })
       setSettings((current) => ({ ...current, ...partial }))
       saveSettings(childId, partial)
         .catch(() => getChild(childId).then((saved) => setSettings(saved.settings)))
@@ -127,12 +144,78 @@ export function AppLayout() {
     wasInGrownUpArea.current = inGrownUpArea
   }, [inGrownUpArea])
 
+  // Usability test: each screen change goes to the session log (ignored by the server
+  // when no session runs). The facilitator console may be open in another window
+  // under the same sign-in, so its own routes aren't logged.
+  useEffect(() => {
+    if (!pathname.startsWith('/facilitator')) logTestEvent({ type: 'route', path: pathname })
+  }, [pathname])
+
   return <ChildLook key={child?.id ?? 'grown-up'} child={child} busy={navigation.state !== 'idle'} />
 }
 
+const NO_TEST_SESSION = { active: false }
+const TEST_SESSION_POLL_MS = 3000
+
+// The usability test session for the task card. It starts from the loader's copy and
+// asks again on each screen change (the layout's loader doesn't rerun between child
+// screens), when the window gets focus, and every few seconds while a session runs,
+// so a new task shows at once. Only the newest answer is kept.
+function useTestSession(initial) {
+  const { pathname } = useLocation()
+  const [testSession, setTestSession] = useState(initial)
+  const latestRequest = useRef(0)
+  const shownPath = useRef(pathname)
+
+  const refresh = useCallback(() => {
+    const request = ++latestRequest.current
+    getActiveTestSession()
+      .catch(() => NO_TEST_SESSION)
+      .then((latest) => {
+        if (request === latestRequest.current) setTestSession(latest)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (shownPath.current === pathname) return
+    shownPath.current = pathname
+    refresh()
+  }, [pathname, refresh])
+
+  useEffect(() => {
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [refresh])
+
+  const active = testSession.active
+  useEffect(() => {
+    if (!active) return undefined
+    const timer = setInterval(refresh, TEST_SESSION_POLL_MS)
+    return () => clearInterval(timer)
+  }, [active, refresh])
+
+  return testSession
+}
+
 // Pathless layout around the child's screens; its loader finds the child playing.
+// During a usability test for this child, the task card follows the screen.
 export function ChildLayout() {
-  return <Outlet />
+  const { child, testSession: loadedTestSession } = useLoaderData()
+  const testSession = useTestSession(loadedTestSession)
+  const showTask = testSession.active && testSession.childId === child.id
+  return (
+    <>
+      <Outlet />
+      {showTask && (
+        <TaskCard
+          key={testSession.taskNumber}
+          taskNumber={testSession.taskNumber}
+          taskTotal={testSession.taskTotal}
+          scenario={testSession.scenario}
+        />
+      )}
+    </>
+  )
 }
 
 export function ErrorScreen() {
@@ -236,6 +319,9 @@ export function ParentHomeRoute() {
   const revalidator = useRevalidator()
   const focusHeading = useFocusHeading()
   const handleSignOut = useSignOut()
+  // ?startTest=1&label=… comes from the facilitator's New Tester Reset.
+  const [searchParams] = useSearchParams()
+  const startOpen = searchParams.get('startTest') === '1'
   if (data.locked) return <Gate session={data.session} />
 
   return (
@@ -255,6 +341,25 @@ export function ParentHomeRoute() {
       onSignOut={handleSignOut}
       onBack={() => navigate(data.session.activeChildId ? '/' : '/players')}
       focusHeading={focusHeading}
+      testSessions={data.testSessions}
+      onStartTestSession={async (details) => {
+        try {
+          await startTestSession(details)
+        } catch (error) {
+          // Another session is running: reload so the form can name it and end it.
+          if (error instanceof ApiError && error.status === 409) await revalidator.revalidate()
+          throw error
+        }
+        navigate('/players')
+      }}
+      onEndTestSession={async (id) => {
+        await endTestSession(id)
+        await revalidator.revalidate()
+      }}
+      onOpenFacilitator={() => navigate('/facilitator')}
+      onOpenTestSession={(id) => navigate(`/facilitator?session=${encodeURIComponent(id)}`)}
+      startOpen={startOpen}
+      initialTesterLabel={(startOpen && searchParams.get('label')) || undefined}
     />
   )
 }
@@ -269,6 +374,7 @@ function ParentChildResults({ child, rounds }) {
       rounds={rounds}
       settings={settings}
       onSettingsChange={updateSettings}
+      onOpenRound={(roundId) => logTestEvent({ type: 'signal', signal: 'round-detail-opened', roundId })}
       onBack={() => navigate('/parent')}
       focusHeading={focusHeading}
     />
@@ -279,6 +385,84 @@ export function ParentChildRoute() {
   const data = useLoaderData()
   if (data.locked) return <Gate session={data.session} />
   return <ParentChildResults key={data.child.id} child={data.child} rounds={data.rounds} />
+}
+
+const FACILITATOR_POLL_MS = 2000
+const nowIso = () => new Date().toISOString()
+
+// The facilitator console keeps the timer's clock (ticking each second while the
+// current task runs) and re-reads the session every couple of seconds while it is
+// active, so the tester's screen and signals update. Everything else comes from the
+// server, so a refresh loses nothing.
+function FacilitatorConsole({ testSession, pastSessions, rounds, childSettings, childName }) {
+  const navigate = useNavigate()
+  const { revalidate, state: revalidation } = useRevalidator()
+  const focusHeading = useFocusHeading()
+  const [now, setNow] = useState(nowIso)
+  const active = testSession?.status === 'active'
+  const task = active ? getCurrentTask(testSession) : null
+  const running = Boolean(task?.startedAt) && !task.outcome
+
+  useEffect(() => {
+    if (!running) return undefined
+    const timer = setInterval(() => setNow(nowIso()), 1000)
+    return () => clearInterval(timer)
+  }, [running])
+
+  // One poll at a time: the next starts a moment after the last one finished.
+  useEffect(() => {
+    if (!active || revalidation !== 'idle') return undefined
+    const timer = setTimeout(revalidate, FACILITATOR_POLL_MS)
+    return () => clearTimeout(timer)
+  }, [active, revalidation, revalidate])
+
+  const signals = useMemo(
+    () => (testSession ? deriveSignals(testSession, { rounds, settings: childSettings }) : {}),
+    [testSession, rounds, childSettings],
+  )
+  const sessionId = testSession?.id ?? null
+
+  return (
+    <FacilitatorScreen
+      key={`${sessionId}:${testSession?.status}`}
+      testSession={testSession}
+      pastSessions={pastSessions}
+      signals={signals}
+      childName={childName}
+      now={now}
+      onAction={async (action) => {
+        await sendTestSessionAction(sessionId, action)
+        setNow(nowIso())
+        await revalidate()
+      }}
+      onEnd={async () => {
+        await endTestSession(sessionId)
+        // Without ?session= the console shows the active session, and this one has ended.
+        await navigate(`/facilitator?session=${encodeURIComponent(sessionId)}`, { replace: true })
+      }}
+      onNewTester={async () => {
+        const { nextLabel } = await newTesterReset(sessionId)
+        await navigate(`/parent?startTest=1&label=${encodeURIComponent(nextLabel)}`)
+      }}
+      onOpenSession={(id) => navigate(`/facilitator?session=${encodeURIComponent(id)}`)}
+      onBack={() => navigate('/parent')}
+      focusHeading={focusHeading}
+    />
+  )
+}
+
+export function FacilitatorRoute() {
+  const data = useLoaderData()
+  if (data.locked) return <Gate session={data.session} />
+  return (
+    <FacilitatorConsole
+      testSession={data.testSession}
+      pastSessions={data.pastSessions}
+      rounds={data.rounds}
+      childSettings={data.childSettings}
+      childName={data.childName}
+    />
+  )
 }
 
 // Child screens

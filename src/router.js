@@ -2,6 +2,7 @@ import { createBrowserRouter, redirect } from 'react-router'
 import {
   childLoader,
   chooseLoader,
+  facilitatorLoader,
   parentChildLoader,
   parentHomeLoader,
   playLoader,
@@ -15,6 +16,7 @@ import {
   ChildLayout,
   ChooseRoute,
   ErrorScreen,
+  FacilitatorRoute,
   LoadingScreen,
   ParentChildRoute,
   ParentHomeRoute,
@@ -30,6 +32,7 @@ import {
 //   /players            Who's playing? (grown-up: pick a child, add one, or open the parent view)
 //   /parent             parent/teacher view: every child, add a child, switch player, sign out
 //   /parent/:childId    one child's results and reading settings
+//   /facilitator        usability test console (?session=<id> shows that session's results)
 //   /                   Start (for the child playing on this device)
 //   /games              Choose a game
 //   /play/:roundId      a round in progress
@@ -54,6 +57,7 @@ export const router = createBrowserRouter([
       { path: 'players', loader: playersLoader, Component: PlayersRoute },
       { path: 'parent', loader: parentHomeLoader, Component: ParentHomeRoute },
       { path: 'parent/:childId', loader: parentChildLoader, Component: ParentChildRoute },
+      { path: 'facilitator', loader: facilitatorLoader, Component: FacilitatorRoute },
       {
         id: 'child',
         loader: childLoader,

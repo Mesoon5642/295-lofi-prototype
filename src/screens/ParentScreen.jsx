@@ -88,9 +88,23 @@ function RoundList({ rounds, onOpen }) {
 
 // One child's results for the parent/teacher view. `rounds`: the child's completed
 // rounds, newest first. `settings` / `onSettingsChange`: the child's reading settings.
-export default function ParentScreen({ child, rounds, settings, onSettingsChange, onBack, focusHeading }) {
+// `onOpenRound(roundId)` (optional) hears when a round's details open.
+export default function ParentScreen({
+  child,
+  rounds,
+  settings,
+  onSettingsChange,
+  onBack,
+  focusHeading,
+  onOpenRound = () => {},
+}) {
   const [openId, setOpenId] = useState(null)
   const openRound = openId ? rounds.find((r) => r.id === openId) : null
+
+  function handleOpen(roundId) {
+    setOpenId(roundId)
+    onOpenRound(roundId)
+  }
 
   return (
     <>
@@ -114,7 +128,7 @@ export default function ParentScreen({ child, rounds, settings, onSettingsChange
             </ScreenHeading>
             <ReadingSettingsPanel childName={child.name} settings={settings} onChange={onSettingsChange} />
             <PracticeWords rounds={rounds} />
-            <RoundList rounds={rounds} onOpen={setOpenId} />
+            <RoundList rounds={rounds} onOpen={handleOpen} />
           </>
         )}
       </main>

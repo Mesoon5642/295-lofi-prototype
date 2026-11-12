@@ -9,6 +9,7 @@ import { childrenRouter } from './routes/children.js'
 import { demoRouter } from './routes/demo.js'
 import { HttpError } from './routes/errors.js'
 import { roundsRouter } from './routes/rounds.js'
+import { testSessionsRouter } from './routes/testSessions.js'
 import { imagesRouter, wordsRouter } from './routes/words.js'
 
 export const AUDIO_DIR = fileURLToPath(new URL('./audio/', import.meta.url))
@@ -34,6 +35,7 @@ export function createApp({ clientOrigins = DEFAULT_ORIGINS } = {}) {
   app.use('/api/words', wordsRouter)
   app.use('/api/images', imagesRouter)
   app.use('/api/demo', demoRouter)
+  app.use('/api/test-sessions', testSessionsRouter)
 
   app.use('/api', () => {
     throw new HttpError(404, 'Not found')

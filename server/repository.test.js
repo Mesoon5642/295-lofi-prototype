@@ -175,7 +175,7 @@ describe('seeding', () => {
   it('uses the expected collection names', async () => {
     await signIn('admin', 'admin')
     const names = (await mongoose.connection.db.listCollections().toArray()).map((c) => c.name)
-    expect(names.sort()).toEqual(['adults', 'childProfiles', 'images', 'rounds', 'sessions', 'words'])
+    expect(names.sort()).toEqual(['adults', 'childProfiles', 'images', 'rounds', 'sessions', 'testSessions', 'words'])
   })
 })
 

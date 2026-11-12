@@ -79,6 +79,7 @@ Mongoose schemas are in `server/models/`. Collections:
 - `words`: the word list (word, hint, picture). New rounds draw from it.
 - `images`: the pictures, stored as bytes (SVG, PNG, JPEG, or WebP; up to 1 MB each) and served at `/api/images/<id>`
 - `rounds`: every round played, including each answer chosen. The server creates rounds and applies each game action.
+- `testSessions`: usability test sessions: tester label, each task's outcome and timing, logged route changes, and the facilitator's notes. A child's typed explanations are never copied here.
 
 Looking at the data:
 - With `MONGODB_URI` set, use MongoDB Compass or `mongosh` as usual.
@@ -130,7 +131,8 @@ server/              Express API
   models/              Mongoose schemas
   repository.js        child, word, image, and round reads and writes
   auth/                sessions, password hashing, auth middleware
-  routes/              /api/auth, /api/children, /api/rounds, /api/words, /api/images, /api/demo
+  routes/              /api/auth, /api/children, /api/rounds, /api/words, /api/images, /api/demo,
+                       /api/test-sessions
   seed/                demo data, seed word list, and seed pictures (images/*.svg)
   scripts/             db:seed, audio:generate
   audio/               speech clips (.wav)
@@ -150,3 +152,14 @@ The API endpoints, data shapes, and module contracts are in [docs/ARCHITECTURE.m
 7. **Sign out:** parent/teacher view → This device → Sign out. The app returns to the sign-in screen.
 
 **Reset Demo Data** (in the parent/teacher view) removes your children's rounds and restores the three "Sample data" rounds.
+
+## Usability test mode
+
+For task-based usability sessions with a think-aloud tester and a facilitator who observes without helping. The facilitator's script and checklists are in [REVIEW_PLAN.md](REVIEW_PLAN.md).
+
+1. **Start a session:** parent/teacher view → **Usability testing** → **Start Usability Test** → enter a tester label (e.g. "Tester 1") and pick the optional tasks (Tasks 1–4 are required) → **Start Session**. This resets the demo data (and Alex's reading settings) and returns to **Who's playing?**, ready to hand over.
+2. **Open the facilitator console** at http://localhost:5173/facilitator **in a separate browser profile, a private window, or another device**, signed in as the same grown-up. A second window in the *same* browser profile shares the sign-in, and it locks whenever the tester goes back to the child's screens.
+3. **Run the tasks:** the tester sees a small **task card** under each child screen ("Task 2 of 6" and the scenario only). On the console: **Start Task** → watch → **Completed Unaided / Completed With Hesitation / Failed** → **Next Task**. The console shows the elapsed time, the tester's current screen, and whether the task's signal was seen (a timing aid only). Add notes with a severity (1 minor, 2 recovered, 3 blocked).
+4. **End Session** → results: one row per task (outcome, time on task, notes) plus every note. **Copy as Text** or **Download JSON**, then **New Tester Reset** for the next tester (label filled in, demo data reset).
+
+Sessions are saved in MongoDB (`testSessions`), so either window can be refreshed. Only one session per grown-up can be active at a time.

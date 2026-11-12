@@ -20,33 +20,41 @@ src/                         React app
     auth.js                  (also) selectChild
     progress.js              listChildren, createChild, getChild, saveSettings, getGames,
                              startRound, getRound, sendRoundAction, whenSaved,
-                             getCompletedRounds, resetDemoData
+                             getCompletedRounds, getRounds, resetDemoData
+    testing.js               usability test sessions: listTestSessions, startTestSession,
+                             getActiveTestSession, getTestSession, sendTestSessionAction,
+                             endTestSession, newTesterReset, logTestEvent
   audio/
     clips.js                 clipName, describeActivity, spokenPhrases (pure; shared with the server)
     player.js                getAudioSupport, createClipPlayer, playClip (Howler.js)
   content/                   pure data, shared with the server
     activities.js            MATCH_THE_WORD, PRACTICE_TRICKY_WORDS, ACTIVITIES, FEEDBACK
     settings.js              SETTING_VALUES, DEFAULT_SETTINGS
+    testTasks.js             TEST_TASKS, OUTCOMES, SEVERITIES, nextTesterLabel (usability test mode)
   game/                      pure functions + reducer; no React, DOM, or network.
                              The server uses them to create rounds and apply actions.
     random.js                createRng(seed)
     questions.js             generateQuestions(items, { rng, count, targets })
     round.js                 createRound, startRound, roundReducer, selectors
     summary.js               summarizeRound, needsPractice, recentPracticeWords
+    testSession.js           createTestSession, testSessionReducer, selectors, deriveSignals
   components/                presentational React pieces
   screens/                   one file per screen
 server/                      Express API
   index.js                   connect DB → seed if empty → listen (PORT, default 3001)
   app.js                     createApp({ clientOrigins }): CORS, cookies, JSON, /audio, /api routes, errors
   db.js                      connectDatabase / disconnectDatabase (MONGODB_URI or embedded)
-  models/                    Mongoose schemas: ChildProfile, Adult, Session, Word, Image, Round
-  repository.js              the ONLY server code that reads/writes children, words, images, rounds
+  models/                    Mongoose schemas: ChildProfile, Adult, Session, Word, Image, Round,
+                             TestSession
+  repository.js              the ONLY server code that reads/writes children, words, images,
+                             rounds, test sessions
   locks.js                   withLock(key, task): one-at-a-time work per round / child
   auth/
     passwords.js             scrypt hashPassword / verifyPassword
     sessions.js              signIn, findSession, unlock, lock, signOut, sign-in lockout
     middleware.js            requireSession, requireElevated, requireChildAccess, requireJsonWrites
-  routes/                    auth, children, rounds, words + images, demo routers; HttpError
+  routes/                    auth, children, rounds, words + images, demo, testSessions routers;
+                             HttpError
   seed/
     seedData.js              SEED_CHILD, SEED_ADULTS, SEED_ROUNDS
     words.js                 SEED_WORDS, SEED_IMAGES
@@ -121,6 +129,29 @@ All time values are passed in (`now` = ISO string). Nothing reads `Date.now()` o
   - `isRoundComplete(round)`: status === 'completed'
   - `getFeedback(question)`: `'correct'` if correct, `'incorrect'` if attempts > 0 and not correct, else `null`
 
+### testSession.js (usability test mode)
+
+A session is the facilitator's record of one tester working through the task set in `src/content/testTasks.js` (six tasks, 1–4 required; scenarios state a goal and never name a button).
+
+```js
+{
+  id: 'test-…', testerLabel: 'Tester 1', adultId, childId,
+  status: 'active' | 'ended', startedAt, endedAt: null | ISO,
+  currentTaskIndex: 0,
+  tasks: [{ taskId, startedAt: null | ISO, endedAt: null | ISO,
+            outcome: null | 'completed_unaided' | 'completed_with_hesitation' | 'failed' }],
+  events: [{ at, taskId, type: 'route' | 'signal', path?, screen?, signal?, roundId? }],
+  notes: [{ at, taskId, screen, text, severity: 1 | 2 | 3 }],
+}
+```
+
+- `createTestSession({ id, testerLabel, adultId, childId, taskIds, now })`: the tasks are every required task plus the chosen ones, in task order.
+- `testSessionReducer(session, action)` returns the same reference for a no-op, and an ended session never changes:
+  - `START_TASK { now }` starts the current task's timer once. `SET_OUTCOME { outcome, now }` needs a started task and stops the timer (the first `endedAt` stays if the outcome is changed). `NEXT_TASK` moves to the next included task.
+  - `LOG_EVENT { event }` keeps only `type`, `path`, `screen`, `signal`, `roundId` and `at`, tagged with the current task, so typed text (a child's explanation) can never reach the log. `ADD_NOTE { text, severity, screen, now }` needs non-empty text (≤ 500) and severity 1–3. `END { now }` closes the session.
+- Selectors: `getCurrentTask`, `isLastTask`, `taskPosition` (`{ number, total }`), `getElapsedMs(task, now)`, `getCurrentScreen`, `screenName(pathname)`, `describeRoute(pathname)`, `formatDuration`, `summarizeSession`, `sessionAsText`.
+- `deriveSignals(session, { rounds, settings })` → `{ [taskId]: { seen, at } }`: each task's "signal the app can log" (a round created, the summary reached, wrong answer + hint + audio on a round, a round detail opened, a Tricky Words round, large text), from the events logged during that task plus the child's rounds and settings. It is only a timing aid: the facilitator's outcome decides whether a task counts as completed. Pause is not stored, so the facilitator confirms it.
+
 ### summary.js
 
 - `needsPractice(question) => boolean`: attempts > 1
@@ -137,6 +168,7 @@ Every model's JSON output drops `__v` and uses a string `id` instead of `_id` (W
 - **Word** (`words`): `_id` = the word itself (lowercase letters, spaces, `'` or `-`), `hint` (≤ 200), `pictureId` (refs Image). JSON: `{ word, hint, pictureId }`.
 - **Image** (`images`): `_id` (lowercase letters, digits, `-`), `contentType` ('image/svg+xml' | 'image/png' | 'image/jpeg' | 'image/webp'), `data: Buffer` (1 byte–1 MB), `description` (for grown-ups only). JSON leaves out `data`.
 - **Round** (`rounds`): `_id: String` ('round-<uuid>', made by the server), `childId` (indexed, refs ChildProfile), `activityId` (enum of `ACTIVITIES` ids), `startedAt: Date`, `completedAt: Date | null`, `status` ('in_progress' | 'completed'), `isSample`, `currentIndex` (≥ 0), `paused`, `questions: [Question]` (at least one).
+- **TestSession** (`testSessions`): the session shape above. `_id: 'test-<uuid>'`, `testerLabel` (1–60), `adultId` (the grown-up's id as a string, indexed), `childId`, dates as `Date`. Task ids, outcomes, event types and signals, and severities are enums from `testTasks.js` / `testSession.js`; notes ≤ 500 chars; at most 2,000 events. A partial unique index on `adultId` where `status: 'active'` allows one active session per grown-up.
 - **Question** (embedded in Round, no `_id`): the Question fields above. `options` must have exactly 3 entries, `attempts` ≥ 0, `explanation` ≤ 200 chars. A question copies its word's hint and pictureId when the round starts, so later word-list edits don't change old rounds.
 
 Seed data is written on first start, when there are no child profiles:
@@ -167,6 +199,12 @@ All functions are async and return plain JSON-safe objects. They throw `HttpErro
   - Runs `roundReducer`, validates the result, and saves it, under `withLock('round:<id>')`.
   - A completed round never changes: the reducer ignores actions on it, and the save filters on `status != completed`.
 - `resetDemoData(childIds?)`: removes the rounds of those children (all children when omitted) and restores their `SEED_ROUNDS`. Children, accounts, words, images, and settings are kept.
+- Test sessions (each takes the signed-in grown-up's id and only reaches their sessions):
+  - `startTestSession(adultId, { testerLabel, childId, taskIds }, { childIds, now })`: 400 for a blank label or unknown task, 409 when one is already active. Resets demo data for `childIds` and the child's settings to `DEFAULT_SETTINGS` (so one tester's large text doesn't carry over), then creates the session. Runs under `withLock('test-start:<adultId>')`.
+  - `getActiveTestSession(adultId)`, `getTestSession(adultId, id)` (null when it's another grown-up's), `listTestSessions(adultId)` (newest first: `{ id, testerLabel, childId, status, startedAt, endedAt }`).
+  - `applyTestSessionAction(adultId, id, action, { now })`: accepts only `START_TASK`, `SET_OUTCOME { outcome }`, `NEXT_TASK`, `ADD_NOTE { text, severity }` (400 otherwise). The server sets the time, and a note's task and screen come from the session. Runs the reducer and saves under `withLock('test:<id>')`; an ended session never changes.
+  - `logTestSessionEvent(adultId, { type: 'route', path } | { type: 'signal', signal, roundId? }, { now })` → `{ logged }`: appends to the active session (no-op without one). Route events get their screen name and round id from the path.
+  - `endTestSession(adultId, id, { now })`; `newTesterReset(adultId, id, { childIds, now })` → `{ session, nextLabel }`: ends the session, resets demo data and the child's settings, and suggests the next label (`Tester 1` → `Tester 2`).
 
 ## Sign-in (server/auth/)
 
@@ -211,7 +249,17 @@ Access: **public**, **session** (signed in), or **unlocked** (signed in + passwo
 | GET | `/api/words` | session | | `[{ word, hint, pictureId }]` |
 | GET | `/api/images/:imageId` | public | | image bytes, with a sandboxing CSP and `nosniff` |
 | POST | `/api/demo/reset` | unlocked | | `{ ok: true }` |
+| GET | `/api/test-sessions` | unlocked | | `[{ id, testerLabel, childId, status, startedAt, endedAt }]` newest first |
+| POST | `/api/test-sessions` | unlocked | `{ testerLabel, childId, taskIds }` | 201 session (resets demo data); 409 when one is active |
+| GET | `/api/test-sessions/active` | session | | `{ active: false }` or `{ active: true, childId, taskId, taskNumber, taskTotal, scenario }` |
+| POST | `/api/test-sessions/active/events` | session | `{ type: 'route', path }` or `{ type: 'signal', signal, roundId? }` | `{ logged }` |
+| GET | `/api/test-sessions/:id` | unlocked | | session |
+| POST | `/api/test-sessions/:id/actions` | unlocked | one facilitator action | session |
+| POST | `/api/test-sessions/:id/end` | unlocked | | session |
+| POST | `/api/test-sessions/:id/new-tester` | unlocked | | `{ session, nextLabel }` |
 | GET | `/audio/:name.wav` | public | | speech clip |
+
+**Test session access.** The facilitator's routes need an unlocked session. The tester's window is locked once a child is picked, so the two routes it uses (`GET /active` for the task card, `POST /active/events` for logging) need only a session; they reach only the signed-in grown-up's active session, and the read leaves out notes, outcomes and the tester label. A second window in the same browser shares the session cookie (and is locked when the tester's window returns to the child's screens), so the facilitator console should run in a separate browser profile or on another device, signed in as the same grown-up.
 
 **Known limits:**
 - Locks and lockout counters live in one process. Running several API processes needs a shared store (e.g. a revision field on rounds, and Mongo-backed failure counts).
@@ -242,7 +290,8 @@ Howler.js plays files, not text, so every spoken phrase has a pre-generated clip
 | `/players` | session (locked → password gate) | Who's playing? (pick, add a child, parent view, sign out) |
 | `/parent` | `listChildren` (403 → password gate) | Parent/teacher overview: children, add child, switch player, demo reset, sign out |
 | `/parent/:childId` | the child + completed rounds (403 → gate; 404 → `/parent`) | One child's reading settings, practice words, rounds |
-| (pathless `child` layout) | `activeChildId` (none → `/players`) + `getChild` | wraps the child screens below |
+| `/facilitator` | test sessions, the chosen one (`?session=<id>`, else the active one) + the child's rounds and settings (403 → gate) | Facilitator console, or Session results once ended |
+| (pathless `child` layout) | `activeChildId` (none → `/players`) + `getChild` + the active test session | wraps the child screens below (and shows the task card during a test session) |
 | `/` (index) | | Start |
 | `/games` | `getGames` | Choose a game |
 | `/play/:roundId` | the round (completed → `/summary/:roundId`; missing or another child's → `/games`) | Activity |
@@ -269,3 +318,8 @@ The route ErrorBoundary shows one of three messages, each with a button:
 - Reading settings belong to each child. `ReadingSettings` takes `settings` and `onChange` props: the Settings dialog edits the playing child (through SettingsContext), and `/parent/:childId` edits that child.
 - Reading settings (text size; font: Standard / OpenDyslexic; read words aloud: On / Off; ask how they chose: Off / On) are for the child's screens. With word audio off, the Hear button beside each answer word is hidden; Hear Instructions is always available. The "Tell us how you chose" prompt after a correct answer is off by default and only appears once a grown-up turns on "Ask how they chose". Settings are stored on the child's profile in MongoDB. They apply right away on screen and are then saved through the API. The settings are for the child, but children can't change them directly. Grown-ups change them in two places: the "Reading settings" panel in the parent/teacher view, or the top bar's Settings button, which opens a modal behind the signed-in grown-up's password (`unlock`) and applies changes live, mid-round. That modal closes the same way (X only), asks for the password every time, and locks the session again when it closes.
 - The grown-up screens (sign-in, Who's playing?, the parent/teacher view) always use standard text size and the standard font, and have no Settings button.
+- Usability test mode (adult screens only, plus the task card):
+  - **Start test session**: the Parent or Teacher view's Start Usability Test button asks for a tester label and which tasks to include (required tasks checked), then resets demo data and returns to Who's playing?. Starting while a session is active asks to end it first. Past sessions are listed by tester label.
+  - **Task card** (`TaskCard`): while a session is active, the child's screens show a collapsible panel after `<main>` with "Task N of M" and the scenario only. It stays in the normal page flow, so it never covers the word buttons, Help, Pause or Next, and it doesn't change the child's text size, layout or focus order. When collapsed its text is `hidden`. It refreshes every few seconds so a Next Task shows at once.
+  - **Facilitator console** (`/facilitator`): tester label, current task with elapsed time, the tester's current screen and the task's signal, outcome buttons, a note box with severity, and End Session. **Session results** then show one row per task, every note, Copy as Text, Download JSON and New Tester Reset (which returns to Start test session with the next label filled in).
+  - Logging: `AppLayout` sends each route change (except `/facilitator`), and the parent view and settings send two signals (round detail opened, large text). Without an active session the server ignores them. Nothing else about the child's screens changes during a session.

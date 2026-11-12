@@ -73,6 +73,11 @@ export function getCompletedRounds(childId) {
   return request(path`/api/children/${childId}/rounds?status=completed`)
 }
 
+// Grown-ups only: every round of the child (in progress and completed), newest first.
+export function getRounds(childId) {
+  return request(path`/api/children/${childId}/rounds`)
+}
+
 // Grown-ups only.
 export function resetDemoData() {
   return request('/api/demo/reset', { method: 'POST' })

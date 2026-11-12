@@ -1065,6 +1065,240 @@ input {
   gap: 12px;
 }
 
+/* ---------- Usability test: start test session (parent view) ---------- */
+
+.test-start {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.test-start__tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.test-start__legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* Each row is a 48px target; the label text toggles the box too. */
+.test-start__task {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  cursor: pointer;
+}
+
+.test-start__task input {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.test-start__task input:disabled,
+.test-start__task input:disabled + span {
+  cursor: default;
+}
+
+.test-start__message:empty {
+  display: none;
+}
+
+.test-sessions__title {
+  font-size: var(--fs-ui);
+}
+
+/* ---------- Usability test: task card (child screens) ---------- */
+
+/* In the normal flow after <main>, so it never covers the screen's buttons. Fixed
+   size and font: it doesn't follow the child's text size or font settings. */
+.task-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 640px;
+  margin-top: 32px;
+  padding: 16px 20px;
+  border: 2px solid #dfe3e8;
+  border-radius: 18px;
+  background: var(--color-surface);
+  font-family: var(--font-standard);
+  font-size: 24px;
+  line-height: 1.5;
+}
+
+.task-card__toggle {
+  min-height: 48px;
+  padding: 8px 18px;
+  border: 3px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ---------- Usability test: facilitator console and results ---------- */
+
+/* Status lines inside panels take no space until they have something to say. */
+.facilitator .panel .status:empty {
+  display: none;
+}
+
+.facilitator__scenario {
+  padding: 12px 16px;
+  border-left: 6px solid var(--color-primary);
+  border-radius: 8px;
+  background: var(--color-primary-soft);
+}
+
+.facilitator__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.facilitator__facts dt {
+  font-weight: 600;
+}
+
+.facilitator__facts dd {
+  margin: 0;
+}
+
+.facilitator__timer {
+  font-size: var(--fs-child);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The chosen outcome. */
+.facilitator .btn[aria-pressed='true'] {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.facilitator .btn[aria-pressed='true']:disabled {
+  border-color: #b8c1cc;
+  background: #eceff3;
+  color: #5b6573;
+}
+
+.facilitator__cell-notes {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+/* The session being shown, in Past sessions. */
+.facilitator .round-list__button[aria-current='true'] {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.note-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.note-form__text {
+  min-height: 112px;
+  font: inherit;
+  font-weight: 400;
+  color: inherit;
+  resize: vertical;
+}
+
+.severity-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.severity-picker__legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.severity-picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.severity-picker__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 16px;
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.severity-picker__option:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  font-weight: 600;
+}
+
+.severity-picker__option input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-list li {
+  padding: 10px 14px;
+  border: 2px solid #dfe3e8;
+  border-radius: 12px;
+}
+
+.note-list__meta {
+  color: var(--color-muted);
+  font-size: var(--fs-small);
+}
+
+@media (max-width: 560px) {
+  .facilitator__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .facilitator__facts dd + dt {
+    margin-top: 6px;
+  }
+}
+
 /* ---------- Small screens ---------- */
 
 @media (max-width: 700px) {

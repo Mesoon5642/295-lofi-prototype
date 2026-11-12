@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { hashPassword } from '../auth/passwords.js'
-import { Adult, ChildProfile, Image, Round, Session, Word } from '../models/index.js'
+import { Adult, ChildProfile, Image, Round, Session, TestSession, Word } from '../models/index.js'
 import { resetDemoData } from '../repository.js'
 import { SEED_ADULTS, SEED_CHILD } from './seedData.js'
 import { SEED_IMAGES, SEED_WORDS } from './words.js'
@@ -61,7 +61,7 @@ export async function seedIfEmpty() {
 
 // Wipes every collection (signing everyone out) and writes the demo data again.
 export async function reseed() {
-  const models = [ChildProfile, Adult, Round, Session, Word, Image]
+  const models = [ChildProfile, Adult, Round, Session, TestSession, Word, Image]
   await Promise.all(models.map((model) => model.deleteMany({})))
   await insertImages()
   await insertWords()

@@ -8,9 +8,11 @@ import {
   getCompletedRounds,
   getGames,
   getRound,
+  getRounds,
   listChildren,
   whenSaved,
 } from '../api/progress.js'
+import { getActiveTestSession, getTestSession, listTestSessions } from '../api/testing.js'
 
 function isStatus(error, status) {
   return error instanceof ApiError && error.status === status
@@ -40,7 +42,8 @@ export async function parentHomeLoader() {
   const session = await loadSession()
   if (!session) return redirect('/sign-in')
   try {
-    return { locked: false, session, profiles: await listChildren() }
+    const [profiles, testSessions] = await Promise.all([listChildren(), listTestSessions()])
+    return { locked: false, session, profiles, testSessions }
   } catch (error) {
     if (isStatus(error, 403)) return { locked: true, session }
     throw error
@@ -64,13 +67,66 @@ export async function parentChildLoader({ params }) {
   }
 }
 
+async function getTestSessionOrNull(id) {
+  try {
+    return await getTestSession(id)
+  } catch (error) {
+    if (isStatus(error, 404)) return null
+    throw error
+  }
+}
+
+// Facilitator console: ?session=<id> (e.g. a past session's results), else the active
+// session, else none (an unknown id also shows none). Also loads the session child's
+// rounds (any status) and settings, for the logged signals (deriveSignals).
+export async function facilitatorLoader({ request }) {
+  await whenSaved()
+  const session = await loadSession()
+  if (!session) return redirect('/sign-in')
+  try {
+    const pastSessions = await listTestSessions()
+    const id =
+      new URL(request.url).searchParams.get('session') ||
+      pastSessions.find((past) => past.status === 'active')?.id
+    const testSession = id ? await getTestSessionOrNull(id) : null
+    if (!testSession) {
+      const none = { testSession: null, rounds: [], childSettings: null, childName: null }
+      return { locked: false, session, pastSessions, ...none }
+    }
+    const [rounds, child] = await Promise.all([
+      getRounds(testSession.childId),
+      getChild(testSession.childId),
+    ])
+    return {
+      locked: false,
+      session,
+      testSession,
+      pastSessions,
+      rounds,
+      childSettings: child.settings,
+      childName: child.name,
+    }
+  } catch (error) {
+    if (isStatus(error, 403)) return { locked: true, session }
+    throw error
+  }
+}
+
+const NO_TEST_SESSION = { active: false }
+
 // Child screens (Start, Choose a game, Play, Summary) all sit under this loader. It
 // finds the child playing on this device; with none picked yet, the grown-up picks one.
+// It also reads the usability test session for the task card; any failure there just
+// means no session, so it never stops the child's game.
 export async function childLoader() {
   const session = await loadSession()
   if (!session) return redirect('/sign-in')
   if (!session.activeChildId) return redirect('/players')
-  return { child: await getChild(session.activeChildId) }
+  const [child, testSession] = await Promise.all([
+    getChild(session.activeChildId),
+    getActiveTestSession().catch(() => NO_TEST_SESSION),
+  ])
+  return { child, testSession }
 }
 
 export async function chooseLoader() {

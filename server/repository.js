@@ -5,9 +5,21 @@
 import { randomUUID } from 'node:crypto'
 import { ACTIVITIES, MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../src/content/activities.js'
 import { DEFAULT_SETTINGS, SETTING_VALUES } from '../src/content/settings.js'
-import { OPTION_COUNT, recentPracticeWords, roundReducer, startRound } from '../src/game/index.js'
+import { OUTCOME_IDS, SEVERITY_VALUES, TEST_TASK_IDS, nextTesterLabel } from '../src/content/testTasks.js'
+import {
+  EVENT_SIGNALS,
+  MAX_NOTE_LENGTH,
+  OPTION_COUNT,
+  createTestSession,
+  describeRoute,
+  getCurrentScreen,
+  recentPracticeWords,
+  roundReducer,
+  startRound,
+  testSessionReducer,
+} from '../src/game/index.js'
 import { withLock } from './locks.js'
-import { Adult, ChildProfile, Image, Round, Word } from './models/index.js'
+import { Adult, ChildProfile, Image, Round, TestSession, Word } from './models/index.js'
 import { HttpError } from './routes/errors.js'
 import { SEED_ROUNDS } from './seed/seedData.js'
 
@@ -246,4 +258,176 @@ export async function resetDemoData(childIds) {
   if (samples.length > 0) {
     await Round.insertMany(samples.map(({ id, ...round }) => ({ ...round, _id: id })))
   }
+}
+
+// Usability test sessions (see src/game/testSession.js). Every function takes the
+// signed-in grown-up's id and only reaches that grown-up's sessions.
+
+const ACTIVE_SESSION_TAKEN = 'A usability test session is already running. End it first.'
+
+function isDuplicateKey(error) {
+  return error?.code === 11000
+}
+
+// Starting a session and New Tester Reset both give the next tester a clean start: the
+// grown-up's children's rounds go back to the sample rounds, and the session child's
+// reading settings go back to the defaults (so one tester's bigger text doesn't carry over).
+async function resetForTester(childIds, childId) {
+  await resetDemoData(childIds)
+  await saveSettings(childId, DEFAULT_SETTINGS)
+}
+
+// Starts a session for the grown-up: { testerLabel, childId, taskIds }. Required tasks
+// are always included. Resets demo data first. 409 when one is already active.
+export async function startTestSession(adultId, input, { childIds, now = new Date() } = {}) {
+  const { testerLabel, childId, taskIds = [] } = isPlainObject(input) ? input : {}
+  if (typeof testerLabel !== 'string' || testerLabel.trim() === '' || testerLabel.trim().length > 60) {
+    throw new HttpError(400, 'Please enter a tester label (up to 60 characters)')
+  }
+  if (typeof childId !== 'string' || childId === '') throw new HttpError(400, 'Choose a child')
+  if (!Array.isArray(taskIds) || !taskIds.every((id) => TEST_TASK_IDS.includes(id))) {
+    throw new HttpError(400, 'Unknown task')
+  }
+
+  return withLock(`test-start:${adultId}`, async () => {
+    if (await TestSession.exists({ adultId, status: 'active' })) throw new HttpError(409, ACTIVE_SESSION_TAKEN)
+    await resetForTester(childIds, childId)
+    const session = createTestSession({
+      id: `test-${randomUUID()}`,
+      testerLabel: testerLabel.trim(),
+      adultId,
+      childId,
+      taskIds,
+      now: now.toISOString(),
+    })
+    const { id, ...fields } = session
+    try {
+      return plain(await TestSession.create({ ...fields, _id: id }))
+    } catch (error) {
+      if (isDuplicateKey(error)) throw new HttpError(409, ACTIVE_SESSION_TAKEN)
+      throw error
+    }
+  })
+}
+
+export async function getActiveTestSession(adultId) {
+  return plain(await TestSession.findOne({ adultId, status: 'active' }))
+}
+
+// The session, or null when it doesn't exist or belongs to another grown-up.
+export async function getTestSession(adultId, id) {
+  return plain(await TestSession.findOne({ _id: id, adultId }))
+}
+
+// Newest first: [{ id, testerLabel, childId, status, startedAt, endedAt }].
+export async function listTestSessions(adultId) {
+  const sessions = await TestSession.find({ adultId })
+    .select({ testerLabel: 1, childId: 1, status: 1, startedAt: 1, endedAt: 1 })
+    .sort({ startedAt: -1 })
+  return sessions.map((session) => {
+    const { id, testerLabel, childId, status, startedAt, endedAt } = plain(session)
+    return { id, testerLabel, childId, status, startedAt, endedAt }
+  })
+}
+
+// Facilitator actions the browser may send. The server sets every time, and a note's
+// task and screen come from the session itself.
+function parseTestSessionAction(input) {
+  const type = isPlainObject(input) ? input.type : undefined
+  switch (type) {
+    case 'START_TASK':
+    case 'NEXT_TASK':
+      return { type }
+    case 'SET_OUTCOME':
+      if (!OUTCOME_IDS.includes(input.outcome)) throw new HttpError(400, 'Unknown outcome')
+      return { type, outcome: input.outcome }
+    case 'ADD_NOTE': {
+      const text = typeof input.text === 'string' ? input.text.trim() : ''
+      if (text === '') throw new HttpError(400, 'Please type a note')
+      if (text.length > MAX_NOTE_LENGTH) {
+        throw new HttpError(400, `Notes can be up to ${MAX_NOTE_LENGTH} characters`)
+      }
+      if (!SEVERITY_VALUES.includes(input.severity)) throw new HttpError(400, 'Severity must be 1, 2 or 3')
+      return { type, text, severity: input.severity }
+    }
+    default:
+      throw new HttpError(400, 'Unknown action')
+  }
+}
+
+// Runs the reducer on a stored session and saves it if it changed. An ended session
+// never changes. Resolves with the session, or null if there is no such session.
+async function updateTestSession(filter, action) {
+  const session = plain(await TestSession.findOne(filter))
+  if (!session) return null
+  return withLock(`test:${session.id}`, async () => {
+    const current = await getTestSession(session.adultId, session.id)
+    const resolved = typeof action === 'function' ? action(current) : action
+    const next = testSessionReducer(current, resolved)
+    if (next === current) return current
+
+    const { id, ...fields } = next
+    const doc = new TestSession({ ...fields, _id: id })
+    await doc.validate()
+    const saved = await TestSession.findOneAndReplace(
+      { _id: id, status: 'active' },
+      doc.toObject(),
+      { returnDocument: 'after' },
+    )
+    return saved ? plain(saved) : getTestSession(session.adultId, id)
+  })
+}
+
+export async function applyTestSessionAction(adultId, id, input, { now = new Date() } = {}) {
+  const action = { ...parseTestSessionAction(input), now: now.toISOString() }
+  return updateTestSession({ _id: id, adultId }, (session) =>
+    action.type === 'ADD_NOTE' ? { ...action, screen: getCurrentScreen(session) } : action,
+  )
+}
+
+// Events from the tester's window: { type: 'route', path } or { type: 'signal', signal,
+// roundId? }. Only these fields are read, so typed text can't reach the log.
+function parseTestEvent(input) {
+  const type = isPlainObject(input) ? input.type : undefined
+  if (type === 'route') {
+    const { path } = input
+    if (typeof path !== 'string' || !path.startsWith('/') || path.length > 300) {
+      throw new HttpError(400, 'path must be an app path')
+    }
+    const { screen, roundId } = describeRoute(path)
+    return { type, path, screen, ...(roundId ? { roundId } : {}) }
+  }
+  if (type === 'signal') {
+    if (!EVENT_SIGNALS.includes(input.signal)) throw new HttpError(400, 'Unknown signal')
+    const event = { type, signal: input.signal }
+    if (input.roundId !== undefined) {
+      if (typeof input.roundId !== 'string' || input.roundId.length > 100) {
+        throw new HttpError(400, 'roundId must be a string')
+      }
+      event.roundId = input.roundId
+    }
+    return event
+  }
+  throw new HttpError(400, 'Unknown event')
+}
+
+// Logs an event on the grown-up's active session, tagged with its current task.
+// Resolves with { logged }: false when no session is active.
+export async function logTestSessionEvent(adultId, input, { now = new Date() } = {}) {
+  const event = { ...parseTestEvent(input), at: now.toISOString() }
+  const session = await updateTestSession({ adultId, status: 'active' }, { type: 'LOG_EVENT', event })
+  return { logged: session !== null }
+}
+
+export async function endTestSession(adultId, id, { now = new Date() } = {}) {
+  return updateTestSession({ _id: id, adultId }, { type: 'END', now: now.toISOString() })
+}
+
+// Ends the session, gives the next tester a clean start (see resetForTester), and
+// resolves with { session, nextLabel }, or null if there is no such session.
+export async function newTesterReset(adultId, id, { childIds, now = new Date() } = {}) {
+  const session = await endTestSession(adultId, id, { now })
+  if (!session) return null
+  await resetForTester(childIds, session.childId)
+  return { session, nextLabel: nextTesterLabel(session.testerLabel) }
 }
