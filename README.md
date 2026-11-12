@@ -44,7 +44,8 @@ npm run dev             # API + React app together
 npm run dev:server      # API only, with auto-restart
 npm run dev:web         # React app only (needs the API running)
 npm start               # API only, no auto-restart
-npm test                # all tests (Vitest; server tests use a throwaway embedded MongoDB)
+npm test                # unit, API, component and accessibility tests (Vitest)
+npm run test:e2e        # end-to-end tests in a real browser (Playwright; not part of npm test)
 npm run lint            # oxlint
 npm run build           # production build of the React app in dist/
 npm run preview         # serve the production build (http://localhost:4173)
@@ -99,6 +100,21 @@ Howler.js plays audio files, not text, so every spoken phrase is a pre-generated
 - Each file is named after its text (`clipName` in `src/audio/clips.js`). For example, "Pick the word that matches the picture." becomes `pick-the-word-that-matches-the-picture.wav`.
 - The committed clips use the Windows built-in voice as a placeholder. To use a real recording, save it over the file with the same name. No code change is needed.
 - **After adding or changing words** (`server/seed/words.js`) **or instructions/game descriptions** (`src/content/activities.js`), run `npm run audio:generate` on Windows, or add the new clips by hand on macOS/Linux. A test (`server/app.test.js`) fails if any seed phrase is missing a clip. Words added straight to the database need a clip added by hand, otherwise their Hear button logs a "Could not load" warning.
+
+### Tests
+
+| Kind | Where | Run with |
+| --- | --- | --- |
+| Unit | `src/game`, `src/content`, `src/audio` (`*.test.js` beside the code) | `npm test` |
+| API and integration | `server/*.test.js`: real Express server on a throwaway embedded MongoDB | `npm test` |
+| Component | `src/screens`, `src/components` (`*.test.jsx`): React Testing Library + user-event in jsdom, with a real router | `npm test` |
+| Accessibility | `src/screens/a11y.test.jsx` (axe, headings, focus, keyboard-only round) and the manual [checklist](docs/ACCESSIBILITY_CHECKLIST.md) | `npm test`, then by hand |
+| End-to-end | `e2e/*.spec.js`: the demo scenarios, layout rules and a usability session in Chromium | `npm run test:e2e` |
+
+No test uses mocks, spies, stubbed modules or fake timers. Stand-ins are passed in as parameters or props.
+
+- Run `npm test` and `npm run lint` before every merge, and `npm run test:e2e` before a release.
+- **First e2e run:** run `npx playwright install chromium` once. The e2e run starts its own API (on `.data/e2e`) and Vite unless they are already running on ports 3001 and 5173, and it resets the demo data before each test.
 
 ### Troubleshooting
 

@@ -9,5 +9,9 @@ export default defineConfig({
     environment: 'jsdom',
     // Server tests start an embedded MongoDB, which can take a while the first time.
     hookTimeout: 120_000,
+    // Testing Library cleanup and the accessibility matcher (see src/test/setup.js).
+    setupFiles: ['src/test/setup.js'],
+    // Playwright specs in e2e/ run only through `npm run test:e2e`.
+    exclude: ['**/node_modules/**', 'dist/**', 'e2e/**'],
   },
 })

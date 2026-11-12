@@ -3,7 +3,8 @@ import mongoose from 'mongoose'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../src/content/activities.js'
 import { DEFAULT_SETTINGS } from '../src/content/settings.js'
-import { createRng } from '../src/game/index.js'
+import { REQUIRED_TASK_IDS } from '../src/content/testTasks.js'
+import { createRng, createTestSession } from '../src/game/index.js'
 import {
   ELEVATED_MS,
   canAccessChild,
@@ -16,19 +17,27 @@ import {
   unlock,
 } from './auth/sessions.js'
 import { connectDatabase, disconnectDatabase } from './db.js'
-import { Adult, ChildProfile, Image, Round, Session, Word } from './models/index.js'
+import { Adult, ChildProfile, Image, Round, Session, TestSession, Word } from './models/index.js'
 import {
   applyRoundAction,
+  applyTestSessionAction,
   createRound,
+  endTestSession,
+  getActiveTestSession,
   getChild,
   getGames,
   getImage,
   getRound,
   getRounds,
+  getTestSession,
   getTrickyWords,
+  listTestSessions,
   listWords,
+  logTestSessionEvent,
+  newTesterReset,
   resetDemoData,
   saveSettings,
+  startTestSession,
 } from './repository.js'
 import { reseed, seedIfEmpty } from './seed/seed.js'
 import { SEED_ADULTS, SEED_CHILD, SEED_ROUNDS } from './seed/seedData.js'
@@ -462,5 +471,256 @@ describe('sessions', () => {
 
     expect((await lock(reloaded)).elevated).toBe(false)
     expect(isElevated(await findSession(token))).toBe(false)
+  })
+})
+
+describe('test sessions', () => {
+  const ADULT = 'adult-1'
+  const OTHER_ADULT = 'adult-2'
+  const at = (minutes) => new Date(NOW.getTime() + minutes * 60_000)
+  const begin = (input = {}, now = NOW, adultId = ADULT) =>
+    startTestSession(
+      adultId,
+      { testerLabel: 'Tester 1', childId: CHILD_ID, taskIds: [], ...input },
+      { childIds: [CHILD_ID], now },
+    )
+
+  it('startTestSession validates its input and stores the session with the given time', async () => {
+    const bad = [
+      null,
+      'Tester 1',
+      { testerLabel: '   ', childId: CHILD_ID },
+      { testerLabel: 'x'.repeat(61), childId: CHILD_ID },
+      { testerLabel: 7, childId: CHILD_ID },
+      { testerLabel: 'Tester 1' },
+      { testerLabel: 'Tester 1', childId: '' },
+      { testerLabel: 'Tester 1', childId: CHILD_ID, taskIds: ['chess'] },
+      { testerLabel: 'Tester 1', childId: CHILD_ID, taskIds: 'bigger-text' },
+    ]
+    for (const input of bad) {
+      await expect(startTestSession(ADULT, input, { childIds: [CHILD_ID], now: NOW })).rejects.toMatchObject({
+        status: 400,
+      })
+    }
+    expect(await TestSession.countDocuments()).toBe(0)
+
+    const session = await begin({ testerLabel: ' Tester 1 ', taskIds: ['bigger-text'] })
+    expect(session).toEqual({
+      ...createTestSession({
+        id: session.id,
+        testerLabel: 'Tester 1',
+        adultId: ADULT,
+        childId: CHILD_ID,
+        taskIds: ['bigger-text'],
+        now: NOW.toISOString(),
+      }),
+    })
+    expect(session.id).toMatch(/^test-[0-9a-f-]{36}$/)
+    expect(session.tasks.map((t) => t.taskId)).toEqual([...REQUIRED_TASK_IDS, 'bigger-text'])
+    expect(await begin({ taskIds: undefined }).catch((error) => error.status)).toBe(409)
+  })
+
+  it('startTestSession 409s a second active session, even started at the same moment', async () => {
+    const first = await begin()
+    await expect(begin({ testerLabel: 'Tester 2' })).rejects.toMatchObject({ status: 409 })
+    expect((await getActiveTestSession(ADULT)).id).toBe(first.id)
+
+    const both = await Promise.allSettled([begin({}, NOW, OTHER_ADULT), begin({}, NOW, OTHER_ADULT)])
+    expect(both.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(both.find((result) => result.status === 'rejected').reason.status).toBe(409)
+    expect(await TestSession.countDocuments({ adultId: OTHER_ADULT })).toBe(1)
+  })
+
+  it('startTestSession resets the rounds and the child’s settings', async () => {
+    await saveSettings(CHILD_ID, { textSize: 'large', explanations: 'on' })
+    await start()
+    await begin()
+    expect(await getRounds()).toEqual([...SEED_ROUNDS].reverse())
+    expect((await getChild(CHILD_ID)).settings).toEqual(DEFAULT_SETTINGS)
+  })
+
+  it('getTestSession and getActiveTestSession only reach the grown-up’s own sessions', async () => {
+    const session = await begin()
+    expect(await getTestSession(ADULT, session.id)).toEqual(session)
+    expect(await getTestSession(OTHER_ADULT, session.id)).toBeNull()
+    expect(await getTestSession(ADULT, 'test-nope')).toBeNull()
+    expect(await getActiveTestSession(ADULT)).toEqual(session)
+    expect(await getActiveTestSession(OTHER_ADULT)).toBeNull()
+  })
+
+  it('listTestSessions orders by start time, newest first', async () => {
+    const later = await begin({ testerLabel: 'Later' }, at(60))
+    await endTestSession(ADULT, later.id, { now: at(90) })
+    const earlier = await begin({ testerLabel: 'Earlier' }, at(0))
+    await begin({ testerLabel: 'Someone else' }, at(120), OTHER_ADULT)
+
+    expect(await listTestSessions(ADULT)).toEqual([
+      {
+        id: later.id,
+        testerLabel: 'Later',
+        childId: CHILD_ID,
+        status: 'ended',
+        startedAt: at(60).toISOString(),
+        endedAt: at(90).toISOString(),
+      },
+      {
+        id: earlier.id,
+        testerLabel: 'Earlier',
+        childId: CHILD_ID,
+        status: 'active',
+        startedAt: at(0).toISOString(),
+        endedAt: null,
+      },
+    ])
+    expect(await listTestSessions('adult-nobody')).toEqual([])
+  })
+
+  it('applyTestSessionAction takes times from `now` and a note’s screen from the session', async () => {
+    const session = await begin()
+    const started = await applyTestSessionAction(ADULT, session.id, { type: 'START_TASK' }, { now: at(1) })
+    expect(started.tasks[0].startedAt).toBe(at(1).toISOString())
+
+    const before = await applyTestSessionAction(
+      ADULT,
+      session.id,
+      { type: 'ADD_NOTE', text: 'Paused', severity: 1, screen: 'Made up' },
+      { now: at(2) },
+    )
+    expect(before.notes[0].screen).toBeNull()
+
+    await logTestSessionEvent(ADULT, { type: 'route', path: '/games' }, { now: at(3) })
+    await logTestSessionEvent(ADULT, { type: 'route', path: '/play/round-1' }, { now: at(4) })
+    await logTestSessionEvent(ADULT, { type: 'signal', signal: 'text-size-large' }, { now: at(5) })
+    const noted = await applyTestSessionAction(
+      ADULT,
+      session.id,
+      { type: 'ADD_NOTE', text: ' Stuck on the hint ', severity: 3 },
+      { now: at(6) },
+    )
+    expect(noted.notes[1]).toEqual({
+      at: at(6).toISOString(),
+      taskId: 'start-round',
+      screen: 'Activity',
+      text: 'Stuck on the hint',
+      severity: 3,
+    })
+    expect(noted.events.map((event) => event.at)).toEqual([3, 4, 5].map((m) => at(m).toISOString()))
+
+    const done = await applyTestSessionAction(
+      ADULT,
+      session.id,
+      { type: 'SET_OUTCOME', outcome: 'completed_unaided' },
+      { now: at(7) },
+    )
+    expect(done.tasks[0]).toEqual({
+      taskId: 'start-round',
+      startedAt: at(1).toISOString(),
+      endedAt: at(7).toISOString(),
+      outcome: 'completed_unaided',
+    })
+    expect(await getTestSession(ADULT, session.id)).toEqual(done)
+  })
+
+  it('applyTestSessionAction rejects unknown actions and reaches only the grown-up’s sessions', async () => {
+    const session = await begin()
+    const bad = [
+      null,
+      [],
+      {},
+      { type: 'END' },
+      { type: 'LOG_EVENT' },
+      { type: 'SET_OUTCOME', outcome: 'won' },
+      { type: 'ADD_NOTE', text: 'x', severity: 0 },
+      { type: 'ADD_NOTE', text: ' ', severity: 1 },
+    ]
+    for (const action of bad) {
+      await expect(applyTestSessionAction(ADULT, session.id, action, { now: NOW })).rejects.toMatchObject({
+        status: 400,
+      })
+    }
+    expect(await applyTestSessionAction(OTHER_ADULT, session.id, { type: 'START_TASK' }, { now: NOW })).toBeNull()
+    expect(await applyTestSessionAction(ADULT, 'test-nope', { type: 'START_TASK' }, { now: NOW })).toBeNull()
+    expect(await getTestSession(ADULT, session.id)).toEqual(session)
+  })
+
+  it('logTestSessionEvent returns { logged: false } when no session is active', async () => {
+    expect(await logTestSessionEvent(ADULT, { type: 'route', path: '/games' }, { now: NOW })).toEqual({
+      logged: false,
+    })
+    await begin({}, NOW, OTHER_ADULT)
+    expect(await logTestSessionEvent(ADULT, { type: 'route', path: '/games' }, { now: NOW })).toEqual({
+      logged: false,
+    })
+    expect((await getActiveTestSession(OTHER_ADULT)).events).toEqual([])
+    await expect(logTestSessionEvent(ADULT, { type: 'signal', signal: 'nope' }, { now: NOW })).rejects.toMatchObject({
+      status: 400,
+    })
+  })
+
+  it('endTestSession ends the session once, after which nothing changes', async () => {
+    const session = await begin()
+    const ended = await endTestSession(ADULT, session.id, { now: at(10) })
+    expect(ended).toEqual({ ...session, status: 'ended', endedAt: at(10).toISOString() })
+    expect(await endTestSession(ADULT, session.id, { now: at(20) })).toEqual(ended)
+    expect(await applyTestSessionAction(ADULT, session.id, { type: 'NEXT_TASK' }, { now: at(21) })).toEqual(ended)
+    expect(await logTestSessionEvent(ADULT, { type: 'route', path: '/' }, { now: at(22) })).toEqual({ logged: false })
+    expect(await getActiveTestSession(ADULT)).toBeNull()
+    expect(await getTestSession(ADULT, session.id)).toEqual(ended)
+    expect(await endTestSession(OTHER_ADULT, session.id, { now: at(23) })).toBeNull()
+    expect(await endTestSession(ADULT, 'test-nope', { now: at(23) })).toBeNull()
+  })
+
+  it('newTesterReset ends the session, resets the child, and suggests the next label', async () => {
+    const session = await begin()
+    await saveSettings(CHILD_ID, { textSize: 'large' })
+    await start()
+    const result = await newTesterReset(ADULT, session.id, { childIds: [CHILD_ID], now: at(30) })
+    expect(result).toEqual({
+      session: { ...session, status: 'ended', endedAt: at(30).toISOString() },
+      nextLabel: 'Tester 2',
+    })
+    expect(await getRounds()).toEqual([...SEED_ROUNDS].reverse())
+    expect((await getChild(CHILD_ID)).settings).toEqual(DEFAULT_SETTINGS)
+  })
+
+  it('newTesterReset returns null for an unknown session, and resets nothing', async () => {
+    const session = await begin()
+    const { round } = await start()
+    expect(await newTesterReset(ADULT, 'test-nope', { childIds: [CHILD_ID], now: NOW })).toBeNull()
+    expect(await newTesterReset(OTHER_ADULT, session.id, { childIds: [CHILD_ID], now: NOW })).toBeNull()
+    expect(await getRound(round.id)).not.toBeNull()
+    expect((await getActiveTestSession(ADULT)).id).toBe(session.id)
+  })
+
+  it('the TestSession schema rejects an invalid severity, outcome, or shape', async () => {
+    const { id, ...valid } = createTestSession({
+      id: 'test-1',
+      testerLabel: 'Tester 1',
+      adultId: ADULT,
+      childId: CHILD_ID,
+      taskIds: [],
+      now: NOW.toISOString(),
+    })
+    const note = { at: NOW, taskId: 'start-round', screen: 'Start', text: 'ok', severity: 2 }
+    await expect(new TestSession({ ...valid, _id: id, notes: [note] }).validate()).resolves.toBeUndefined()
+
+    const [firstTask, ...rest] = valid.tasks
+    const broken = [
+      { ...valid, notes: [{ ...note, severity: 4 }] },
+      { ...valid, notes: [{ ...note, severity: 0 }] },
+      { ...valid, notes: [{ ...note, text: 'x'.repeat(501) }] },
+      { ...valid, tasks: [{ ...firstTask, outcome: 'won' }, ...rest] },
+      { ...valid, tasks: [{ ...firstTask, taskId: 'chess' }, ...rest] },
+      { ...valid, tasks: [] },
+      { ...valid, status: 'paused' },
+      { ...valid, testerLabel: '  ' },
+      { ...valid, events: [{ at: NOW, type: 'signal', signal: 'nope' }] },
+      { ...valid, events: [{ at: NOW, type: 'click' }] },
+    ]
+    for (const session of broken) {
+      await expect(new TestSession({ ...session, _id: id }).validate()).rejects.toThrow(
+        mongoose.Error.ValidationError,
+      )
+    }
   })
 })

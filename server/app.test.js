@@ -4,67 +4,23 @@ import { clipName, spokenPhrases } from '../src/audio/clips.js'
 import { ACTIVITIES, MATCH_THE_WORD, PRACTICE_TRICKY_WORDS } from '../src/content/activities.js'
 import { DEFAULT_SETTINGS } from '../src/content/settings.js'
 import { createApp } from './app.js'
-import { hashPassword } from './auth/passwords.js'
 import { SESSION_COOKIE, clearFailures } from './auth/sessions.js'
 import { connectDatabase, disconnectDatabase } from './db.js'
-import { Adult } from './models/index.js'
 import { reseed } from './seed/seed.js'
 import { SEED_CHILD, SEED_ROUNDS } from './seed/seedData.js'
 import { SEED_WORDS } from './seed/words.js'
+import { ORIGIN, addTeacher, client, setBase, signedIn } from './testClient.js'
 
-const ORIGIN = 'http://localhost:5173'
 const CHILD = SEED_CHILD.id
 let server
 let base
-
-// A browser-like client against the real Express app: keeps the session cookie and
-// sends JSON with the app's Origin.
-function client() {
-  let cookie = null
-  async function call(path, { method = 'GET', body, headers = {} } = {}) {
-    const send = method !== 'GET' && method !== 'HEAD'
-    const response = await fetch(`${base}${path}`, {
-      method,
-      headers: {
-        Origin: ORIGIN,
-        ...(send ? { 'Content-Type': 'application/json' } : {}),
-        ...(cookie ? { Cookie: cookie } : {}),
-        ...headers,
-      },
-      body: send ? JSON.stringify(body ?? {}) : undefined,
-    })
-    const setCookie = response.headers.get('set-cookie')
-    if (setCookie?.startsWith(`${SESSION_COOKIE}=`)) {
-      const value = setCookie.split(';')[0]
-      cookie = value.endsWith('=') ? null : value
-    }
-    const type = response.headers.get('content-type') ?? ''
-    const data = type.includes('json') ? await response.json() : null
-    return { status: response.status, headers: response.headers, data, setCookie }
-  }
-  return { call, hasCookie: () => cookie !== null }
-}
-
-// Signs in (which starts unlocked). `playing` picks the child for the device (which
-// locks it again); `locked` just locks it.
-async function signedIn({ username = 'admin', password = 'admin', playing, locked = false } = {}) {
-  const browser = client()
-  await browser.call('/api/auth/sign-in', { method: 'POST', body: { username, password } })
-  if (playing) await browser.call('/api/auth/active-child', { method: 'POST', body: { childId: playing } })
-  if (locked) await browser.call('/api/auth/lock', { method: 'POST' })
-  return browser
-}
-
-// A second grown-up (a teacher) with their own password and children.
-async function addTeacher(childIds = []) {
-  await Adult.create({ username: 'teacher', role: 'teacher', childIds, ...(await hashPassword('chalk')) })
-}
 
 beforeAll(async () => {
   await connectDatabase({ uri: null, persist: false })
   server = createApp({ clientOrigins: [ORIGIN] }).listen(0)
   await new Promise((resolve) => server.once('listening', resolve))
   base = `http://127.0.0.1:${server.address().port}`
+  setBase(base)
 })
 
 afterAll(async () => {
@@ -387,6 +343,33 @@ describe('children and who is playing', () => {
     expect((await parent.call('/api/demo/reset', { method: 'POST' })).status).toBe(200)
     expect((await parent.call(`/api/children/${CHILD}/rounds`)).data).toHaveLength(SEED_ROUNDS.length)
     expect((await teacher.call(`/api/children/${kim.id}/rounds`)).data).toHaveLength(1)
+  })
+
+  it('demo reset restores exactly the sample rounds and leaves other grown-ups’ children alone', async () => {
+    await addTeacher()
+    const teacher = await signedIn({ username: 'teacher', password: 'chalk' })
+    const { data: kim } = await teacher.call('/api/children', { method: 'POST', body: { name: 'Kim' } })
+    const { data: kimRound } = await teacher.call(`/api/children/${kim.id}/rounds`, {
+      method: 'POST',
+      body: { activityId: MATCH_THE_WORD.id },
+    })
+
+    const parent = await signedIn()
+    const { data: alexRound } = await parent.call(`/api/children/${CHILD}/rounds`, {
+      method: 'POST',
+      body: { activityId: MATCH_THE_WORD.id },
+    })
+    expect(alexRound.isSample).toBe(false)
+    expect((await parent.call('/api/demo/reset', { method: 'POST' })).data).toEqual({ ok: true })
+
+    const rounds = (await parent.call(`/api/children/${CHILD}/rounds`)).data
+    expect(rounds.map((r) => r.id).sort()).toEqual(SEED_ROUNDS.map((r) => r.id).sort())
+    expect(rounds.every((r) => r.isSample === true)).toBe(true)
+    expect(rounds).toEqual([...SEED_ROUNDS].reverse())
+    expect((await parent.call(`/api/rounds/${alexRound.id}`)).status).toBe(404)
+
+    expect((await teacher.call(`/api/children/${kim.id}/rounds`)).data).toEqual([kimRound])
+    expect((await teacher.call(`/api/children/${kim.id}`)).data).toEqual(kim)
   })
 })
 

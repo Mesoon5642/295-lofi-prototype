@@ -265,6 +265,19 @@ describe('NEXT and completion', () => {
     expect(roundReducer(done, { type: 'PAUSE' })).toBe(done)
   })
 
+  it('final NEXT sets completedAt to its own now and stays on the last index', () => {
+    let r = newRound()
+    for (let i = 0; i < 4; i += 1) r = roundReducer(selectCorrect(r), { type: 'NEXT', now: START })
+    const last = selectCorrect(r)
+    expect(last.currentIndex).toBe(4)
+    const finalNow = '2026-10-22T10:07:30.000Z'
+    const done = roundReducer(last, { type: 'NEXT', now: finalNow })
+    expect(done.status).toBe('completed')
+    expect(done.completedAt).toBe(finalNow)
+    expect(done.currentIndex).toBe(4)
+    expect(roundReducer(done, { type: 'NEXT', now: END })).toBe(done)
+  })
+
   it('unknown actions return the same reference', () => {
     const round = newRound()
     expect(roundReducer(round, { type: 'NOPE' })).toBe(round)

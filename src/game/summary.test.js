@@ -92,6 +92,21 @@ describe('summarizeRound', () => {
     )
   })
 
+  it('does not flag a word answered in one attempt even when a hint was used', () => {
+    const round = playRound({
+      id: 'round-h',
+      seed: 5,
+      startedAt: '2026-10-20T09:00:00.000Z',
+      completedAt: '2026-10-20T09:04:00.000Z',
+      plan: { hat: { hint: true, audio: true } },
+    })
+    const summary = summarizeRound(round)
+    const hat = summary.words.find((w) => w.word === 'hat')
+    expect(hat).toMatchObject({ attempts: 1, hintUsed: true, needsPractice: false })
+    expect(summary.practiceWords).toEqual([])
+    expect(summary.hintCount).toBe(1)
+  })
+
   it('does not share selection arrays with the round', () => {
     const round = playRound({ id: 'r', seed: 2, startedAt: 'a', completedAt: 'b' })
     const summary = summarizeRound(round)

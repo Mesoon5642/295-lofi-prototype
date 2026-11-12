@@ -64,7 +64,10 @@ server/                      Express API
   audio/                     <clip name>.wav
 ```
 
-Tests live beside the code as `*.test.js`. They use no mocks, spies, stubbed modules, or fake timers. Server tests (`// @vitest-environment node`) start a real throwaway embedded MongoDB and, for routes, a real HTTP server on a random port. Hand-written stand-ins are passed in through parameters where needed (e.g. a fake `Howl` class).
+Tests live beside the code as `*.test.js` (`*.test.jsx` when they contain JSX). They use no mocks, spies, stubbed modules, or fake timers. Hand-written stand-ins are passed in through parameters or props where needed (e.g. a fake `Howl` class, or ActivityScreen's `sendAction` / `playAudio` / `audioSupport` props).
+- **Server tests** (`// @vitest-environment node`) start a real throwaway embedded MongoDB and, for routes, a real HTTP server on a random port. `server/testClient.js` is a browser-like client that keeps the session cookie.
+- **Component and accessibility tests** render real screens in jsdom inside a real memory router (`src/test/renderWithRouter.jsx`) with React Testing Library and user-event. `vitest-axe` checks them, with color contrast left to the manual checklist (`docs/ACCESSIBILITY_CHECKLIST.md`). `src/test/setup.js` registers the matcher and Testing Library cleanup.
+- **End-to-end tests** (`e2e/`, Playwright, `npm run test:e2e`) run in Chromium against the running app (API on `.data/e2e`), resetting demo data before each test. They cover the demo scenarios, the layout rules jsdom can't check (text and button sizes, visible focus, the task card never covering controls), and a full usability session. They are not part of `npm test`.
 
 ## Data model
 

@@ -107,6 +107,18 @@ describe('generateQuestions', () => {
     }
   })
 
+  it('puts the correct answer in every position across seeds for Tricky Words targets', () => {
+    for (const targets of [['dog', 'bus'], ['cat', 'sun', 'hat'], ['hat']]) {
+      const positions = new Set()
+      for (const seed of SEEDS) {
+        for (const q of generateQuestions(ITEMS, { rng: createRng(seed), count: 5, targets })) {
+          positions.add(q.options.indexOf(q.target))
+        }
+      }
+      expect(positions).toEqual(new Set([0, 1, 2]))
+    }
+  })
+
   it('builds a single question when only one target word is given', () => {
     const questions = generateQuestions(ITEMS, { rng: createRng(2), targets: ['hat'] })
     expect(questions).toHaveLength(1)

@@ -34,9 +34,19 @@ function Feedback({ kind, attempts }) {
   return null
 }
 
-export default function ActivityScreen({ initialRound, onBack, onComplete, focusHeading }) {
+// `sendAction`, `playAudio` and `audioSupport` default to the real API and Howler
+// player; tests pass hand-written stand-ins.
+export default function ActivityScreen({
+  initialRound,
+  onBack,
+  onComplete,
+  focusHeading,
+  sendAction = sendRoundAction,
+  playAudio = playClip,
+  audioSupport = getAudioSupport,
+}) {
   const [round, applyLocally] = useReducer(roundReducer, initialRound)
-  const [audioAvailable] = useState(() => getAudioSupport() === 'available')
+  const [audioAvailable] = useState(() => audioSupport() === 'available')
   const [saveFailed, setSaveFailed] = useState(false)
   const { settings } = useContext(SettingsContext)
   const activity = ACTIVITIES.find((a) => a.id === round.activityId) ?? MATCH_THE_WORD
@@ -59,12 +69,12 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
   const dispatch = useCallback(
     (action) => {
       applyLocally(action)
-      sendRoundAction(roundId, action).then(
+      sendAction(roundId, action).then(
         () => setSaveFailed(false),
         () => setSaveFailed(true),
       )
     },
-    [roundId],
+    [roundId, sendAction],
   )
 
   useEffect(() => {
@@ -86,7 +96,7 @@ export default function ActivityScreen({ initialRound, onBack, onComplete, focus
   }, [round.paused])
 
   function say(text) {
-    if (playClip(text)) dispatch({ type: 'USE_AUDIO' })
+    if (playAudio(text)) dispatch({ type: 'USE_AUDIO' })
   }
 
   function finishExplanation(action) {

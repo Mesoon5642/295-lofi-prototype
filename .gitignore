@@ -26,3 +26,7 @@ dist-ssr
 # Local environment and embedded MongoDB data
 .env
 .data
+
+# Playwright output
+test-results
+playwright-report
